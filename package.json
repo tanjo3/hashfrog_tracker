@@ -2,6 +2,9 @@
   "name": "hashfrog_tracker",
   "version": "0.7.3",
   "private": true,
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
@@ -25,11 +28,11 @@
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.0",
-    "@testing-library/jest-dom": "~6.9.1",
+    "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.4",
     "eslint": "^8.57.1",
-    "eslint-plugin-jsdoc": "^62.9.0",
+    "eslint-plugin-jsdoc": "^64.1.0",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^4.6.2",
     "prettier": "^3.9.6"
