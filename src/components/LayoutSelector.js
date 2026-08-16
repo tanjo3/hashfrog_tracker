@@ -1,7 +1,9 @@
 import { useCallback, useState } from "react";
 
+import Alert from "react-bootstrap/Alert";
 import { Link } from "react-router-dom";
 import { useLayout } from "../context/layoutContext";
+import { isValidLayout } from "../utils/layout-validation";
 import { readFileAsText } from "../utils/utils";
 
 // Layouts
@@ -13,6 +15,7 @@ import escapefromkakJSON from "../layouts/escapefromkak.json";
 
 const LayoutSelector = () => {
   const [key, setKey] = useState(Math.random());
+  const [importError, setImportError] = useState(null);
   const { state: layout, dispatch } = useLayout();
 
   const handleInputChange = useCallback(
@@ -22,9 +25,19 @@ const LayoutSelector = () => {
       } = event;
 
       if (files.length > 0) {
-        const content = await readFileAsText(files[0]);
-        const parsedLayout = JSON.parse(content);
-        dispatch({ type: "LAYOUT_UPDATE", payload: parsedLayout });
+        try {
+          const content = await readFileAsText(files[0]);
+          const parsedLayout = JSON.parse(content);
+          if (!isValidLayout(parsedLayout)) {
+            throw new Error("Missing layoutConfig dimensions or components list.");
+          }
+          setImportError(null);
+          dispatch({ type: "LAYOUT_UPDATE", payload: parsedLayout });
+        } catch (err) {
+          console.warn("Failed to import layout:", err);
+          setImportError("Not a valid layout file. Keeping the current layout.");
+          setKey(Math.random());
+        }
       } else {
         dispatch({ type: "LAYOUT_DEFAULT" });
       }
@@ -33,6 +46,7 @@ const LayoutSelector = () => {
   );
 
   const resetLayout = useCallback(() => {
+    setImportError(null);
     dispatch({ type: "LAYOUT_DEFAULT" });
     setKey(Math.random());
   }, [dispatch]);
@@ -60,6 +74,7 @@ const LayoutSelector = () => {
           selectedLayout = hashfrogJSON;
           break;
       }
+      setImportError(null);
       dispatch({ type: "LAYOUT_UPDATE", payload: selectedLayout });
       setKey(Math.random());
     },
@@ -80,6 +95,11 @@ const LayoutSelector = () => {
           onChange={handleInputChange}
           accept=".json"
         />
+        {importError && (
+          <Alert variant="danger" className="py-1 px-2 mt-2 mb-0 small">
+            {importError}
+          </Alert>
+        )}
       </div>
       <div className="mb-2">
         <Link to="/editor" className="btn btn-light btn-sm w-25 me-2">

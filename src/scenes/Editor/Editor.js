@@ -1,8 +1,10 @@
 import FileSaver from "file-saver";
 import { useCallback, useMemo, useState } from "react";
+import Alert from "react-bootstrap/Alert";
 import { useLayout } from "../../context/layoutContext";
 import useDebounce from "../../hooks/useDebounce";
 import baseLayout from "../../layouts/base.json";
+import { isValidLayout } from "../../utils/layout-validation";
 import { generateId, readFileAsText } from "../../utils/utils";
 import Layout from "../Layout";
 import EditorComponentsList from "./EditorComponentsList";
@@ -120,8 +122,10 @@ const Editor = () => {
   const [tab, setTab] = useState(0);
   const [layout, setLayout] = useState(() => prepareLayout(currentLayout));
   const [layoutKey, setLayoutKey] = useState(Math.random());
+  const [importError, setImportError] = useState(null);
 
   const newLayout = () => {
+    setImportError(null);
     setLayout({ ...baseLayout, id: generateId() });
   };
 
@@ -131,10 +135,20 @@ const Editor = () => {
     } = event;
 
     if (files.length > 0) {
-      const content = await readFileAsText(files[0]);
-      let parsedLayout = JSON.parse(content);
-      parsedLayout = prepareLayout(parsedLayout);
-      setLayout(parsedLayout);
+      try {
+        const content = await readFileAsText(files[0]);
+        const parsedLayout = JSON.parse(content);
+        if (!isValidLayout(parsedLayout)) {
+          throw new Error("Missing layoutConfig dimensions or components list.");
+        }
+        setImportError(null);
+        setLayout(prepareLayout(parsedLayout));
+      } catch (err) {
+        console.warn("Failed to open layout:", err);
+        setImportError("Not a valid layout file. Keeping the current editor state.");
+      }
+
+      // Reset the file input either way so picking the same file again re-fires onChange.
       setLayoutKey(Math.random());
     }
   };
@@ -221,6 +235,11 @@ const Editor = () => {
                   Export to JSON
                 </button>
               </div>
+              {importError && (
+                <Alert variant="danger" className="py-1 px-2 mt-2 mb-0 small">
+                  {importError}
+                </Alert>
+              )}
               <p className="uuid">Layout ID: {layout.id}</p>
               {EditorComponents}
             </div>
