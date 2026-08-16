@@ -6,18 +6,21 @@ import "./index.css";
 
 // Context and Router
 import { BrowserRouter } from "react-router-dom";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { LayoutProvider } from "./context/layoutContext";
 import { TrackerProvider } from "./context/trackerContext";
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
   /* <React.StrictMode>*/
-  <LayoutProvider>
-    <TrackerProvider>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </TrackerProvider>
-  </LayoutProvider>,
+  <ErrorBoundary>
+    <LayoutProvider>
+      <TrackerProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </TrackerProvider>
+    </LayoutProvider>
+  </ErrorBoundary>,
   /*</React.StrictMode>*/
 );

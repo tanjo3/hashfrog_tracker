@@ -1,14 +1,22 @@
 import { createContext, useContext, useReducer } from "react";
 
 import defaultLayout from "../layouts/hashfrog.json";
+import { isValidLayout } from "../utils/layout-validation";
+import { readJSON, writeJSON } from "../utils/safe-storage";
 
 /**
  * Retrieves the layout from localStorage or returns the default.
  * @returns {object} The initial layout object.
  */
 function getInitialLayout() {
-  const layout = localStorage.getItem("layout");
-  return layout ? JSON.parse(layout) : { ...defaultLayout };
+  const layout = readJSON("layout", null);
+  if (isValidLayout(layout)) {
+    return layout;
+  }
+  if (layout !== null) {
+    console.warn("Ignoring saved layout with unexpected shape. Using default layout.");
+  }
+  return { ...defaultLayout };
 }
 
 /**
@@ -16,11 +24,9 @@ function getInitialLayout() {
  * @param {object} layout - The layout object to cache.
  */
 function setLayoutCache(layout) {
-  const layoutString = JSON.stringify(layout);
-  localStorage.setItem("layout", layoutString);
+  writeJSON("layout", layout);
 }
 
-const initialState = getInitialLayout();
 const LayoutContext = createContext();
 
 /**
@@ -50,7 +56,7 @@ function reducer(_state, action) {
  * @returns {object} The context provider.
  */
 function LayoutProvider(props) {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [state, dispatch] = useReducer(reducer, undefined, getInitialLayout);
 
   return <LayoutContext.Provider value={{ state, dispatch }} {...props} />;
 }
