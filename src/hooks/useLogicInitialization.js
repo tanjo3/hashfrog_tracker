@@ -73,7 +73,7 @@ const useLogicInitialization = (options = {}) => {
     initializeLogic();
   }, [initializeLogic]);
 
-  return { isLoading, error, isInitialized };
+  return { isLoading, error, isInitialized, retry: initializeLogic };
 };
 
 export default useLogicInitialization;
