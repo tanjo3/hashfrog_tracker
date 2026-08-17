@@ -11,6 +11,7 @@ import { warmRequirementsCache } from "../utils/expression-converter";
 import { getEFKSkipRegions, getSelectedEFKDungeons, isEFK, isEFKLabel } from "../utils/efk";
 import Locations from "../utils/locations";
 import LogicHelper from "../utils/logic-helper";
+import { readJSON, writeString } from "../utils/safe-storage";
 import SettingsHelper from "../utils/settings-helper";
 
 const GENERATOR_VERSION = process.env.REACT_APP_GENERATOR_VERSION;
@@ -112,7 +113,7 @@ function getSettingsStringCache() {
  * @param {string} string - The settings string to cache.
  */
 function setSettingsStringCache(string) {
-  localStorage.setItem("settings_string", string);
+  writeString("settings_string", string);
 }
 
 /**
@@ -133,7 +134,7 @@ function getGeneratorVersionCache() {
  * @param {string} version - The generator version string.
  */
 function setGeneratorVersionCache(version) {
-  localStorage.setItem("generator_version", version);
+  writeString("generator_version", version);
 }
 
 // localStorage key for a persisted tracker session (single slot).
@@ -188,20 +189,69 @@ function saveSession(state) {
 }
 
 /**
- * Loads the persisted session snapshot, if one exists and is parseable.
- * @returns {object|null} The snapshot, or null when absent/corrupt.
+ * Checks for a plain (non-array) object.
+ * @param {unknown} value - The value to check.
+ * @returns {boolean} True when the value is a plain object.
+ */
+function isPlainObject(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Drops snapshot fields whose type does not match what SESSION_RESTORE and the settings singletons
+ * expect, so a hand-edited or stale snapshot degrades to a partial restore instead of a crash.
+ * @param {unknown} snapshot - The parsed snapshot candidate.
+ * @returns {object|null} The sanitized snapshot, or null when unusable.
+ */
+function sanitizeSnapshot(snapshot) {
+  if (!isPlainObject(snapshot)) { return null; }
+
+  const sanitized = { ...snapshot };
+  const dropUnless = (key, isValid) => {
+    if (sanitized[key] !== undefined && !isValid(sanitized[key])) {
+      console.warn(`Ignoring invalid "${key}" in saved tracker session.`);
+      delete sanitized[key];
+    }
+  };
+
+  dropUnless("items_list", isPlainObject);
+  dropUnless("counters", isPlainObject);
+  dropUnless("labelSelections", isPlainObject);
+  dropUnless("hintEntries", isPlainObject);
+  dropUnless("draggedIcons", isPlainObject);
+  dropUnless("starting_item_claims", isPlainObject);
+  dropUnless("checkedLocations", isPlainObject);
+  dropUnless("unchanged_starting_inventory", Array.isArray);
+  dropUnless("mq_dungeons_specific", Array.isArray);
+  dropUnless("dungeon_shortcuts", Array.isArray);
+  dropUnless("starting_age_selection", value => value === null || value === "child" || value === "adult");
+  dropUnless("settings_string", value => typeof value === "string");
+  dropUnless("generator_version", value => typeof value === "string");
+  dropUnless("layout", value => typeof value === "string");
+
+  // SESSION_RESTORE iterates each region's list, so region entries must be string arrays.
+  if (isPlainObject(sanitized.checkedLocations)) {
+    const checkedLocations = {};
+    Object.entries(sanitized.checkedLocations).forEach(([regionName, locationNames]) => {
+      if (Array.isArray(locationNames)) {
+        checkedLocations[regionName] = locationNames.filter(name => typeof name === "string");
+      } else {
+        console.warn(`Ignoring invalid checked locations for "${regionName}" in saved tracker session.`);
+      }
+    });
+    sanitized.checkedLocations = checkedLocations;
+  }
+
+  return sanitized;
+}
+
+/**
+ * Loads the persisted session snapshot, if one exists and is usable.
+ * Invalid fields are dropped individually, so as much progress as possible survives.
+ * @returns {object|null} The sanitized snapshot, or null when absent/corrupt.
  */
 function loadSession() {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) { return null; }
-    const snapshot = JSON.parse(raw);
-    if (!snapshot || typeof snapshot !== "object") { return null; }
-    return snapshot;
-  } catch (err) {
-    console.warn("Failed to load tracker session:", err);
-    return null;
-  }
+  return sanitizeSnapshot(readJSON(SESSION_KEY, null));
 }
 
 // Rebuilding both age caches costs a few hundred milliseconds.

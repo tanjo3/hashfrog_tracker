@@ -12,6 +12,8 @@ import { useLayout } from "../context/layoutContext";
 import { loadSession, useSettingsString } from "../context/trackerContext";
 import SettingStringsJSON from "../data/setting-strings.json";
 import useDebounce from "../hooks/useDebounce";
+import { isValidLayout } from "../utils/layout-validation";
+import { writeJSON, writeString } from "../utils/safe-storage";
 
 const baseURL = process.env.PUBLIC_URL;
 const GENERATOR_VERSION = process.env.REACT_APP_GENERATOR_VERSION;
@@ -19,6 +21,22 @@ const GENERATOR_VERSION = process.env.REACT_APP_GENERATOR_VERSION;
 const PRESETS = SettingStringsJSON.presets || [];
 const CURRENT_ACTIVE_VERSION = SettingStringsJSON.currentActiveVersion || "9.0.0";
 const GENERATOR_VERSIONS = SettingStringsJSON.supportedVersions || ["9.0.0"];
+
+/**
+ * Parses and validates the layout a session snapshot stores as a JSON string.
+ * @param {object|null} session - The saved session snapshot.
+ * @returns {object|null} The parsed layout, or null when missing/invalid.
+ */
+function getSessionLayout(session) {
+  if (!session || typeof session.layout !== "string") { return null; }
+  try {
+    const layout = JSON.parse(session.layout);
+    return isValidLayout(layout) ? layout : null;
+  } catch (err) {
+    console.warn("Saved session has an unreadable layout:", err);
+    return null;
+  }
+}
 
 const TrackerLauncher = () => {
   const [checks, setChecks] = useState(false);
@@ -95,9 +113,9 @@ const TrackerLauncher = () => {
 
     // Launch with exactly what the launcher currently displays, in case a
     // prior resumeSession overwrote the cached config in localStorage.
-    localStorage.setItem("layout", JSON.stringify(layout));
-    localStorage.setItem("settings_string", checks ? settingsString : "");
-    localStorage.setItem("generator_version", generatorVersion);
+    writeJSON("layout", layout);
+    writeString("settings_string", checks ? settingsString : "");
+    writeString("generator_version", generatorVersion);
 
     const { width, height } = layoutSize;
 
@@ -117,16 +135,24 @@ const TrackerLauncher = () => {
     return () => window.removeEventListener("focus", refresh);
   }, []);
 
+  // A session whose layout is missing or damaged cannot be resumed.
+  const canResume = useMemo(() => !!getSessionLayout(savedSession), [savedSession]);
+
   const resumeSession = useCallback(() => {
     // Re-read fresh: another window may have saved a newer session since the
     // launcher last rendered, leaving the render-time `savedSession` stale.
     const session = loadSession();
-    if (!session) { return; }
+    const sessionLayout = getSessionLayout(session);
+    if (!session || !sessionLayout) {
+      // Sync the button state so a now-unusable session disables Resume.
+      setSavedSession(session);
+      return;
+    }
 
     // Force the resumed window to reproduce the saved session's config.
-    localStorage.setItem("layout", session.layout);
-    localStorage.setItem("settings_string", session.settings_string);
-    localStorage.setItem("generator_version", session.generator_version);
+    writeString("layout", session.layout);
+    writeString("settings_string", session.settings_string || "");
+    writeString("generator_version", session.generator_version || "");
 
     const resumeChecks = !!session.checksEnabled;
     let url = resumeChecks ? `${baseURL}/tracker/checks` : `${baseURL}/tracker`;
@@ -134,7 +160,7 @@ const TrackerLauncher = () => {
 
     const {
       layoutConfig: { width, height },
-    } = JSON.parse(session.layout);
+    } = sessionLayout;
     const windowWidth = width + (resumeChecks ? 285 : 0);
     const windowHeight = height + 25;
 
@@ -195,15 +221,23 @@ const TrackerLauncher = () => {
             </Button>
           </div>
 
-          <div className="d-grid mb-4">
+          <div
+            className="d-grid mb-4"
+            title={savedSession && !canResume ? "The saved session's layout is damaged and cannot be resumed." : undefined}
+          >
             <Button
               type="button"
               variant="outline-light"
               onClick={resumeSession}
-              disabled={!savedSession}
+              disabled={!canResume}
             >
               ↻ Resume Session
             </Button>
+            {savedSession && !canResume && (
+              <p className="small text-warning mt-1 mb-0">
+                The saved session&apos;s layout is damaged, so it cannot be resumed.
+              </p>
+            )}
           </div>
 
           <Form.Check

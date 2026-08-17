@@ -176,8 +176,14 @@ const Element = props => {
       event.preventDefault();
 
       if (receiver) {
-        const item = event.dataTransfer.getData("item");
-        const { icon: droppedIcon } = JSON.parse(item);
+        // Only accept drags started by another element (dragHandler sets "item").
+        let droppedIcon = null;
+        try {
+          droppedIcon = JSON.parse(event.dataTransfer.getData("item"))?.icon ?? null;
+        } catch {
+          // Not an internal element drag.
+        }
+        if (typeof droppedIcon !== "string" || !droppedIcon) { return; }
         setDraggedIcon(droppedIcon);
         setSelected(0) //reset selected so if the dragged item gets cleared, the user will see the hashfrog
         persistDraggedIcon(iconNameByUrl[droppedIcon] ?? null);
