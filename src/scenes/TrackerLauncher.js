@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import Alert from "react-bootstrap/Alert";
 import Button from "react-bootstrap/Button";
@@ -73,9 +73,12 @@ const TrackerLauncher = () => {
   );
   const debouncedString = useDebounce(settingsString, 300);
 
+  // Mirror the field into localStorage, but only once the user has actually edited it.
+  const settingsTouched = useRef(false);
   useEffect(() => {
-    setSettingsStringCache(checks ? debouncedString : "");
-  }, [checks, debouncedString, setSettingsStringCache]);
+    if (!settingsTouched.current) { return; }
+    setSettingsStringCache(debouncedString);
+  }, [debouncedString, setSettingsStringCache]);
 
   const [generatorVersion, setGeneratorVersion] = useState(
     () => cachedGeneratorVersion || CURRENT_ACTIVE_VERSION
@@ -114,7 +117,7 @@ const TrackerLauncher = () => {
     // Launch with exactly what the launcher currently displays, in case a
     // prior resumeSession overwrote the cached config in localStorage.
     writeJSON("layout", layout);
-    writeString("settings_string", checks ? settingsString : "");
+    writeString("settings_string", settingsString);
     writeString("generator_version", generatorVersion);
 
     const { width, height } = layoutSize;
@@ -172,6 +175,7 @@ const TrackerLauncher = () => {
   }, []);
 
   const updateString = (preset) => {
+    settingsTouched.current = true;
 
     if (preset.settingsString) {
       setSettingsString(preset.settingsString);
@@ -335,9 +339,10 @@ const TrackerLauncher = () => {
                       name="setting_string"
                       placeholder="Paste settings string here"
                       value={settingsString}
-                      onChange={({ target: { value } }) =>
-                        setSettingsString(value)
-                      }
+                      onChange={({ target: { value } }) => {
+                        settingsTouched.current = true;
+                        setSettingsString(value);
+                      }}
                     />
                   </InputGroup>
                   {launchAttempted && missingSettingsString && (
