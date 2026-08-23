@@ -60,11 +60,12 @@ const Element = props => {
     }, "");
 
     if (iconHash !== null && hash !== iconHash && resolvedStartingIndex === 0) {
-      setSelected(0);
+      // Fall back to the layout's configured starting icon
+      setSelected(selectedStartingIndex || 0);
     }
 
     setIconHash(hash);
-  }, [icons, iconHash, name, resolvedStartingIndex]);
+  }, [icons, iconHash, name, resolvedStartingIndex, selectedStartingIndex]);
 
   // Sync selected state when the restored/starting item index changes
   useEffect(() => {
@@ -72,10 +73,10 @@ const Element = props => {
       // This element should claim the restored or starting item
       setSelected(resolvedStartingIndex);
     } else if (!hasUserInteracted.current) {
-      // Another element claimed the item and user hasn't interacted - reset to uncollected
-      setSelected(0);
+      // Fall back to the layout's configured starting icon
+      setSelected(selectedStartingIndex || 0);
     }
-  }, [resolvedStartingIndex]);
+  }, [resolvedStartingIndex, selectedStartingIndex]);
 
   // Restore a saved counter value when one is present
   useEffect(() => {
