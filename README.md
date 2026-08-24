@@ -13,3 +13,19 @@ The project is based on the React Create App, so the following scripts are avail
 - `npm test` Launches the test runner in the interactive watch mode.
 - `npm run build` Builds the app for production to the `build` folder.
 - `npm run eject` This command will remove the single build dependency from your project.
+
+## Deployment
+
+Production deployments use Cloudflare Workers static assets. Cloudflare Workers
+Builds runs on pushes to `master` and deploys the static `build` directory.
+
+The Worker is configured in `wrangler.jsonc`. Its SPA fallback returns `index.html`
+for client-side routes such as `/tracker` and `/editor`.
+
+Configure the Cloudflare Workers Build with:
+
+- Production branch: `master`
+- Build command: `npm run build`
+- Deploy command: `npx wrangler deploy`
+
+The Worker name in `wrangler.jsonc` must match the Worker created in Cloudflare.
