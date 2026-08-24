@@ -135,6 +135,7 @@ const Layout = props => {
                 countConfig={component.countConfig}
                 labelStartingIndex={component.labelStartingIndex}
                 hidden={component.hidden}
+                editing={props.editing}
               />
             </div>
           );
@@ -254,7 +255,7 @@ const Layout = props => {
           return null;
       }
     });
-  }, [renderLayout.components, getCacheElement]);
+  }, [renderLayout.components, getCacheElement, props.editing]);
 
   const layoutStyles = useMemo(() => {
     const styles = {

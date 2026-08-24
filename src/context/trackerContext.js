@@ -31,7 +31,7 @@ function parseItems(items_list, counters, unchanged_starting_inventory) {
   const items = _.cloneDeep(DEFAULT_ITEMS);
   const tradeRevert = !SettingsHelper.getSetting("adult_trade_shuffle") && !SettingsHelper.getRenamedAttribute("disable_trade_revert");
 
-  _.forEach(_.union(_.values(items_list), unchanged_starting_inventory), uuid => {
+  _.forEach(_.union(_.compact(_.values(items_list)), unchanged_starting_inventory), uuid => {
     const mapping = UUID_TO_ITEM[uuid];
 
     if (!mapping) {
@@ -520,12 +520,7 @@ function reducer(state, action) {
       const { item, parentID } = payload;
 
       // Prepping collecting items
-      const items_list = _.cloneDeep(state.items_list);
-      if (_.isNull(item)) {
-        delete items_list[parentID];
-      } else {
-        _.set(items_list, parentID, item);
-      }
+      const items_list = { ...state.items_list, [parentID]: item || null };
 
       const parsedItems = parseItems(items_list, state.counters, state.unchanged_starting_inventory);
 
@@ -542,6 +537,26 @@ function reducer(state, action) {
       };
       saveSession(newState);
       return newState;
+    }
+    case "ITEM_LAYOUT_DEFAULT": {
+      const { item, parentID } = payload;
+
+      if (!item || state.items_list[parentID] !== undefined) {
+        return state;
+      }
+
+      const items_list = { ...state.items_list, [parentID]: item };
+      const parsedItems = parseItems(items_list, state.counters, state.unchanged_starting_inventory);
+      const locations = _.isEqual(parsedItems, state.items)
+        ? state.locations
+        : validateLocations(state.locations, parsedItems, getEFKSkipRegions(state.settings_string, state.labelSelections));
+
+      return {
+        ...state,
+        locations,
+        items: parsedItems,
+        items_list,
+      };
     }
     case "STRING_SET": {
       setSettingsStringCache(payload);
@@ -803,6 +818,7 @@ const useItems = (items, elementId = null, name = null) => {
     () => ({
       markCounter: (value, item) => dispatch({ type: "COUNTER_MARK", payload: { value, item } }),
       markItem: (item, parentID) => dispatch({ type: "ITEM_MARK", payload: { item, parentID } }),
+      markLayoutDefault: (item, parentID) => dispatch({ type: "ITEM_LAYOUT_DEFAULT", payload: { item, parentID } }),
       updateItemsFromLogic: settings => dispatch({ type: "ITEMS_UPDATE_FROM_LOGIC", payload: settings }),
     }),
     [dispatch],
@@ -854,7 +870,8 @@ const useItems = (items, elementId = null, name = null) => {
   const savedIndex = useMemo(() => {
     if (elementId === null || !items || !items.length) { return null; }
     const savedItem = state.items_list[elementId];
-    if (!savedItem) { return null; }
+    if (savedItem === undefined) { return null; }
+    if (savedItem === null) { return 0; }
     const idx = items.indexOf(savedItem);
     return idx >= 0 ? idx : null;
   }, [items, elementId, state.items_list]);

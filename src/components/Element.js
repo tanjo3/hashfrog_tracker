@@ -32,11 +32,13 @@ const Element = props => {
     dragCurrent = false, // if dragging should default or drag the current selected
     selectedStartingIndex = 0, // on which of the icons we start
     items = [],
-    hidden = false
+    hidden = false,
+    editing = false, // rendered in the layout editor preview, whose tracker state is throwaway
   } = props;
 
   const {
-    markCounter, markItem, startingIndex: trackerContextStartingIndex, startingItem, savedIndex, savedCounter, savedLabelValue,
+    markCounter, markItem, markLayoutDefault, startingIndex: trackerContextStartingIndex, startingItem, savedIndex,
+    savedCounter, savedLabelValue,
   } = useItems(items, id, name);
   useElement(id, startingItem);
   const labelSelect = useLabelSelect();
@@ -44,8 +46,10 @@ const Element = props => {
   const { iconUrlByName, iconNameByUrl } = useIconCache();
 
   const resolvedStartingIndex = savedIndex !== null ? savedIndex : trackerContextStartingIndex;
+  const fallbackIndex = savedIndex === null ? selectedStartingIndex || 0 : 0;
+  const layoutDefaultItem = savedIndex === null && selectedStartingIndex > 0 ? items[selectedStartingIndex] ?? null : null;
 
-  const [selected, setSelected] = useState(resolvedStartingIndex || selectedStartingIndex);
+  const [selected, setSelected] = useState(resolvedStartingIndex || fallbackIndex);
   const [counter, setCounter] = useState(0);
   const [iconHash, setIconHash] = useState(null);
   const [draggedIcon, setDraggedIcon] = useState(null);
@@ -61,11 +65,11 @@ const Element = props => {
 
     if (iconHash !== null && hash !== iconHash && resolvedStartingIndex === 0) {
       // Fall back to the layout's configured starting icon
-      setSelected(selectedStartingIndex || 0);
+      setSelected(fallbackIndex);
     }
 
     setIconHash(hash);
-  }, [icons, iconHash, name, resolvedStartingIndex, selectedStartingIndex]);
+  }, [icons, iconHash, name, resolvedStartingIndex, fallbackIndex]);
 
   // Sync selected state when the restored/starting item index changes
   useEffect(() => {
@@ -74,9 +78,12 @@ const Element = props => {
       setSelected(resolvedStartingIndex);
     } else if (!hasUserInteracted.current) {
       // Fall back to the layout's configured starting icon
-      setSelected(selectedStartingIndex || 0);
+      setSelected(fallbackIndex);
+
+      // Let the logic (and the next session save) know that item is owned
+      if (layoutDefaultItem && !editing) { markLayoutDefault(layoutDefaultItem, id); }
     }
-  }, [resolvedStartingIndex, selectedStartingIndex]);
+  }, [resolvedStartingIndex, fallbackIndex, layoutDefaultItem, markLayoutDefault, id, editing]);
 
   // Restore a saved counter value when one is present
   useEffect(() => {
