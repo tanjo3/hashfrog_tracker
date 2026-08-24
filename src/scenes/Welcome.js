@@ -6,6 +6,7 @@ import TrackerLauncher from "./TrackerLauncher";
 
 import profile_tanjo3 from "../assets/contributors/tanjo3.jpg";
 import profile_wafo from "../assets/contributors/wafo.png";
+import profile_flee from "../assets/contributors/flee.png";
 
 const Welcome = () => {
   return (
@@ -156,6 +157,20 @@ const Welcome = () => {
                     className="rounded-circle border border-2 border-info"
                     style={{ width: 48, height: 48 }}
                     title="Wafo"
+                  />
+                </a>
+                <a
+                  href="https://www.twitch.tv/flee135"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-decoration-none"
+                >
+                  <img
+                    src={profile_flee}
+                    alt="Flee"
+                    className="rounded-circle border border-2 border-info"
+                    style={{ width: 48, height: 48 }}
+                    title="Flee"
                   />
                 </a>
               </div>
