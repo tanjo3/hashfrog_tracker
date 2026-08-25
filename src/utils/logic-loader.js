@@ -111,11 +111,12 @@ class LogicLoader {
    * @returns {string} JSON text ready to be parsed.
    */
   static _validateLogicFile(fileData) {
-    const matchFullLineComment = new RegExp(/^[ \t]*#[^\n]*\n?/, "gm");
-    const matchTrailingComment = new RegExp(/ +#.*\n/, "g");
-    const matchMultilineString = new RegExp(/ *\n +/, "g");
+    const matchFullLineComment = /^[ \t]*#.*$\n?/gm;
+    const matchTrailingComment = / +#.*$/gm;
+    const matchMultilineString = / *\n +/g;
 
-    const removedFullLineComments = fileData.replace(matchFullLineComment, "");
+    const normalizedNewlines = fileData.replace(/\r\n?/g, "\n");
+    const removedFullLineComments = normalizedNewlines.replace(matchFullLineComment, "");
     const removedComments = removedFullLineComments.replace(matchTrailingComment, "").trim();
     const removedMultilines = removedComments.replace(matchMultilineString, " ").trim();
 
