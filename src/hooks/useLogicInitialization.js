@@ -12,6 +12,9 @@ const useLogicInitialization = (options = {}) => {
   const [isLoading, setIsLoading] = useState(!skip);
   const [error, setError] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
+
+  // Where the logic files came from (requested vs. resolved version, fallback reason, warnings)
+  const [logicMeta, setLogicMeta] = useState(null);
   const { updateItemsFromLogic } = useItems();
 
   const initializeLogic = useCallback(async () => {
@@ -20,14 +23,16 @@ const useLogicInitialization = (options = {}) => {
     try {
       setIsLoading(true);
       setError(null);
+      setLogicMeta(null);
 
       const generatorVersion = getGeneratorVersionCache();
       const settingsString = getSettingsStringCache();
 
       // Load logic files for the specific generator version
-      const bundle = await LogicLoader.loadLogicFiles(generatorVersion, settingsString);
+      const { files: bundle, meta } = await LogicLoader.loadLogicFiles(generatorVersion, settingsString);
       const { logicHelpersFile, locationTable, boulderTable, dungeonFiles, dungeonMQFiles, bossesFile, overworldFile } =
         bundle;
+      setLogicMeta(meta);
 
       // Initialize SettingsHelper with version-specific defaults
       SettingsHelper.initialize(bundle);
@@ -73,7 +78,7 @@ const useLogicInitialization = (options = {}) => {
     initializeLogic();
   }, [initializeLogic]);
 
-  return { isLoading, error, isInitialized, retry: initializeLogic };
+  return { isLoading, error, isInitialized, logicMeta, retry: initializeLogic };
 };
 
 export default useLogicInitialization;

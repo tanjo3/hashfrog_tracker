@@ -5,33 +5,65 @@ import { parseBoulderTable } from "./boulder-table-parser.mjs";
 import { parseLocationTable } from "./location-table-parser.mjs";
 
 class LogicLoader {
+  /**
+   * Load the logic files for a generator version, preferring a bundled copy and otherwise fetching from GitHub.
+   * @param {string} version - Generator version as reported by the randomizer (e.g. "9.1.0" or "owner/tag").
+   * @param {string} [settingsString] - Settings string, used to detect the EFK bundle.
+   * @returns {Promise<{files: object, meta: {requestedVersion: string, resolvedVersion: string, source: string, usedFallback: boolean, reason: string|null, warnings: string[]}}>}
+   *   The logic bundle plus a description of where it came from. `source` is "bundled", "fetched" or "fallback".
+   */
   static async loadLogicFiles(version, settingsString) {
     const normalizedVersion = VersionConfig.normalizeVersion(version);
 
     // Check for bundled logic files
     if (VersionConfig.isBundled(normalizedVersion, settingsString)) {
-      return await VersionConfig.getBundledLogicFiles(normalizedVersion, settingsString);
+      const files = await VersionConfig.getBundledLogicFiles(normalizedVersion, settingsString);
+      return {
+        files,
+        meta: this._meta(normalizedVersion, normalizedVersion, "bundled"),
+      };
     }
 
     // If none are found, try to fetch them from GitHub
     const { owner, tag } = VersionConfig.parseVersion(normalizedVersion);
 
     try {
-      return await this._fetchLogicFiles(owner, tag);
+      const { files, warnings } = await this._fetchLogicFiles(owner, tag);
+      return {
+        files,
+        meta: this._meta(normalizedVersion, normalizedVersion, "fetched", { warnings }),
+      };
     } catch (error) {
-      // If unable to fetch logic files, fall back to bundled version
+      // If unable to fetch logic files, fall back to the bundled version
+      const fallbackVersion = VersionConfig.getFallbackVersion();
+      const reason = error?.message || String(error);
       console.warn(
-        `Failed to fetch logic files for ${owner}/${tag} (version "${version}"): ${error}. ` +
-        `Falling back to bundled ${VersionConfig.getFallbackVersion()} logic files. ` +
+        `Failed to fetch logic files for ${owner}/${tag} (version "${version}"): ${reason}. ` +
+        `Falling back to bundled ${fallbackVersion} logic files. ` +
         `Tooltips and logic may be inaccurate.`,
       );
-      return await VersionConfig.getFallbackLogicFiles();
+      const files = await VersionConfig.getFallbackLogicFiles();
+      return {
+        files,
+        meta: this._meta(normalizedVersion, fallbackVersion, "fallback", { reason }),
+      };
     }
+  }
+
+  static _meta(requestedVersion, resolvedVersion, source, { reason = null, warnings = [] } = {}) {
+    return {
+      requestedVersion,
+      resolvedVersion,
+      source,
+      usedFallback: source === "fallback",
+      reason,
+      warnings,
+    };
   }
 
   static async _fetchLogicFiles(owner, tag) {
     // Load all logic files in parallel
-    const [logicHelpersFile, locationTable, boulderTable, bossesFile, overworldFile, ...dungeonResults] = await Promise.all([
+    const [logicHelpersFile, locationTable, boulderResult, bossesFile, overworldFile, ...dungeonResults] = await Promise.all([
       this._loadLogicFile(this._logicHelpersFileUrl(owner, tag)),
       this._loadLocationTable(this._locationListFileUrl(owner, tag)),
       this._loadBoulderTable(this._bouldersFileUrl(owner, tag)),
@@ -61,15 +93,18 @@ class LogicLoader {
       }
     });
 
-    return {
+    const files = {
       logicHelpersFile,
       locationTable,
-      boulderTable,
+      boulderTable: boulderResult.boulderTable,
       dungeonFiles,
       dungeonMQFiles,
       bossesFile,
       overworldFile,
     };
+    const warnings = boulderResult.warning ? [boulderResult.warning] : [];
+
+    return { files, warnings };
   }
 
   static async _loadLogicFile(fileUrl) {
@@ -89,14 +124,22 @@ class LogicLoader {
   /**
    * Fetch and parse the boulder table, if this branch implements boulder shuffle.
    * @param {string} fileUrl - URL of the branch's Boulders.py.
-   * @returns {Promise<object>} Map of boulder name to type, empty when the branch has no such file.
+   * @returns {Promise<{boulderTable: object, warning: string|null}>} Map of boulder name to type, plus a warning when
+   *   the table could not be fetched for a reason other than "this branch has none".
    */
   static async _loadBoulderTable(fileUrl) {
-    const response = await fetch(fileUrl);
+    let response;
+    try {
+      response = await fetch(fileUrl);
+    } catch (error) {
+      return { boulderTable: {}, warning: `Boulder table could not be fetched (${error?.message || error})` };
+    }
 
-    // Only the boulder-shuffle forks ship Boulders.py, so a miss here is the normal case
-    if (!response.ok) { return {}; }
-    return parseBoulderTable(await response.text());
+    if (response.status === 404) { return { boulderTable: {}, warning: null }; }
+    if (!response.ok) {
+      return { boulderTable: {}, warning: `Boulder table could not be fetched (HTTP ${response.status})` };
+    }
+    return { boulderTable: parseBoulderTable(await response.text()), warning: null };
   }
 
   static async _loadFileFromUrl(url) {
