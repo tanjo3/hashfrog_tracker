@@ -174,7 +174,15 @@ class Locations {
 
       if (_.includes(_.keys(region), "locations")) {
         const missingLocations = [];
+        const parseFailures = [];
         _.forEach(region.locations, (rule, locationName) => {
+          // A location the table doesn't know and a rule that doesn't parse are different problems.
+          // The first means the location can't be categorized. The second means its logic is unusable.
+          if (!(locationName in this.locationTable)) {
+            missingLocations.push(locationName);
+            return;
+          }
+
           try {
             const [type, vanillaItem] = this.locationTable[locationName];
 
@@ -234,13 +242,19 @@ class Locations {
               }
             }
           } catch (error) {
-            missingLocations.push(locationName);
+            parseFailures.push(`"${locationName}": ${error?.message || error} (rule: ${rule})`);
           }
         });
 
         // Alert when there are unknown locations
         if (missingLocations.length) {
           console.warn(`[${region.region_name}]: ${missingLocations.length} locations missing from locations table.`);
+        }
+
+        // Alert separately when rules cannot be parsed.
+        // These locations exist but their logic is unusable.
+        if (parseFailures.length) {
+          console.warn(`[${region.region_name}]: ${parseFailures.length} location rules failed to parse.\n${parseFailures.join("\n")}`);
         }
       }
 
