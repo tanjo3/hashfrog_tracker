@@ -117,6 +117,7 @@ const useLogicInitialization = (options = {}) => {
     try {
       setIsLoading(true);
       setError(null);
+      setIsInitialized(false);
       setLogicMeta(null);
 
       const generatorVersion = getGeneratorVersionCache();
@@ -134,20 +135,22 @@ const useLogicInitialization = (options = {}) => {
 
       Locations.initialize(dungeonFiles, dungeonMQFiles, bossesFile, overworldFile, locationTable);
 
-      let settings;
       if (!settingsString) {
-        settings = bundle.settingsDefaults;
-      } else {
+        throw new Error(
+          "No settings string was provided. Launch the tracker from the main page with a settings string or preset.",
+        );
+      }
+
         // The timeout only covers the settings decode.
         // The logic-file fetches above manage themselves.
         const timeout = setTimeout(() => controller.abort(), SETTINGS_DECODE_TIMEOUT_MS);
+      let settings;
         try {
           settings = await fetchDecodedSettings(generatorVersion, settingsString, controller.signal);
         } finally {
           clearTimeout(timeout);
         }
         if (isStale()) { return; }
-      }
 
       // Apply defaults and old-name transformations first so LogicHelper sees normalized settings
       SettingsHelper.setSettings(settings);
