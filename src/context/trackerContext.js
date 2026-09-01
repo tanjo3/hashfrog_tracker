@@ -442,7 +442,11 @@ function reducer(state, action) {
     }
     case "ITEMS_UPDATE_FROM_LOGIC": {
       const settings = payload;
-      const items = [...settings.starting_equipment, ...settings.starting_inventory, ...settings.starting_songs];
+      const items = [
+        ...(settings.starting_equipment ?? []),
+        ...(settings.starting_inventory ?? []),
+        ...(settings.starting_songs ?? []),
+      ];
 
       const starting_inventory = items.map(item => {
         return ITEMS_JSON[item];

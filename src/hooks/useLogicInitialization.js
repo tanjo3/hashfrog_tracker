@@ -9,7 +9,8 @@ import SettingsHelper from "../utils/settings-helper";
 
 const SETTINGS_DECODE_TIMEOUT_MS = 10000;
 
-// SettingsHelper builds Sets from these, so a non-list value would throw deep inside logic evaluation.
+// SettingsHelper builds Sets from the first group, and the items reducer spreads the starting-item lists,
+// so a non-list value in any of these would throw far away from the response that caused it.
 const LIST_SETTINGS = [
   "mq_dungeons_specific",
   "dungeon_shortcuts",
@@ -18,6 +19,9 @@ const LIST_SETTINGS = [
   "adult_trade_start",
   "shuffle_child_trade",
   "disabled_locations",
+  "starting_equipment",
+  "starting_inventory",
+  "starting_songs",
 ];
 
 const CHECK_STRING_HINT = "Check the settings string and generator version, then try again.";
@@ -141,16 +145,16 @@ const useLogicInitialization = (options = {}) => {
         );
       }
 
-        // The timeout only covers the settings decode.
-        // The logic-file fetches above manage themselves.
-        const timeout = setTimeout(() => controller.abort(), SETTINGS_DECODE_TIMEOUT_MS);
+      // The timeout only covers the settings decode.
+      // The logic-file fetches above manage themselves.
+      const timeout = setTimeout(() => controller.abort(), SETTINGS_DECODE_TIMEOUT_MS);
       let settings;
-        try {
-          settings = await fetchDecodedSettings(generatorVersion, settingsString, controller.signal);
-        } finally {
-          clearTimeout(timeout);
-        }
-        if (isStale()) { return; }
+      try {
+        settings = await fetchDecodedSettings(generatorVersion, settingsString, controller.signal);
+      } finally {
+        clearTimeout(timeout);
+      }
+      if (isStale()) { return; }
 
       // Apply defaults and old-name transformations first so LogicHelper sees normalized settings
       SettingsHelper.setSettings(settings);
