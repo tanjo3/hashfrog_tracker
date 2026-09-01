@@ -8,6 +8,7 @@ import LogicLoader from "../utils/logic-loader";
 import SettingsHelper from "../utils/settings-helper";
 
 const SETTINGS_DECODE_TIMEOUT_MS = 10000;
+const LOGIC_FILES_TIMEOUT_MS = 30000;
 
 // SettingsHelper builds Sets from the first group, and the items reducer spreads the starting-item lists,
 // so a non-list value in any of these would throw far away from the response that caused it.
@@ -86,7 +87,10 @@ const fetchDecodedSettings = async (generatorVersion, settingsString, signal) =>
   let body;
   try {
     body = await response.json();
-  } catch {
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      throw new Error("The settings service did not respond in time. Check your connection and try again.");
+    }
     throw new Error("The settings service returned an unreadable response. Try again in a moment.");
   }
 
@@ -115,8 +119,16 @@ const useLogicInitialization = (options = {}) => {
     const isStale = () => generationRef.current !== generation;
 
     abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const withDeadline = async (ms, run) => {
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const timer = setTimeout(() => controller.abort(), ms);
+      try {
+        return await run(controller.signal);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
 
     try {
       setIsLoading(true);
@@ -128,7 +140,9 @@ const useLogicInitialization = (options = {}) => {
       const settingsString = getSettingsStringCache();
 
       // Load logic files for the specific generator version
-      const { files: bundle, meta } = await LogicLoader.loadLogicFiles(generatorVersion, settingsString);
+      const { files: bundle, meta } = await withDeadline(LOGIC_FILES_TIMEOUT_MS, signal =>
+        LogicLoader.loadLogicFiles(generatorVersion, settingsString, { signal }),
+      );
       if (isStale()) { return; }
       const { logicHelpersFile, locationTable, boulderTable, dungeonFiles, dungeonMQFiles, bossesFile, overworldFile } =
         bundle;
@@ -145,15 +159,9 @@ const useLogicInitialization = (options = {}) => {
         );
       }
 
-      // The timeout only covers the settings decode.
-      // The logic-file fetches above manage themselves.
-      const timeout = setTimeout(() => controller.abort(), SETTINGS_DECODE_TIMEOUT_MS);
-      let settings;
-      try {
-        settings = await fetchDecodedSettings(generatorVersion, settingsString, controller.signal);
-      } finally {
-        clearTimeout(timeout);
-      }
+      const settings = await withDeadline(SETTINGS_DECODE_TIMEOUT_MS, signal =>
+        fetchDecodedSettings(generatorVersion, settingsString, signal),
+      );
       if (isStale()) { return; }
 
       // Apply defaults and old-name transformations first so LogicHelper sees normalized settings

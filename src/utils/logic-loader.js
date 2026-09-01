@@ -9,10 +9,13 @@ class LogicLoader {
    * Load the logic files for a generator version, preferring a bundled copy and otherwise fetching from GitHub.
    * @param {string} version - Generator version as reported by the randomizer (e.g. "9.1.0" or "owner/tag").
    * @param {string} [settingsString] - Settings string, used to detect the EFK bundle.
+   * @param {object} [options] - Loading options.
+   * @param {AbortSignal} [options.signal] - Cancels the GitHub downloads (a timeout or an unmount).
+   *   The loader then falls back to the bundled version like any other download failure.
    * @returns {Promise<{files: object, meta: {requestedVersion: string, resolvedVersion: string, source: string, usedFallback: boolean, reason: string|null, warnings: string[]}}>}
    *   The logic bundle plus a description of where it came from. `source` is "bundled", "fetched" or "fallback".
    */
-  static async loadLogicFiles(version, settingsString) {
+  static async loadLogicFiles(version, settingsString, { signal } = {}) {
     const normalizedVersion = VersionConfig.normalizeVersion(version);
 
     // Check for bundled logic files
@@ -28,7 +31,7 @@ class LogicLoader {
     const { owner, tag } = VersionConfig.parseVersion(normalizedVersion);
 
     try {
-      const { files, warnings } = await this._fetchLogicFiles(owner, tag);
+      const { files, warnings } = await this._fetchLogicFiles(owner, tag, signal);
       return {
         files,
         meta: this._meta(normalizedVersion, normalizedVersion, "fetched", { warnings }),
@@ -36,7 +39,7 @@ class LogicLoader {
     } catch (error) {
       // If unable to fetch logic files, fall back to the bundled version
       const fallbackVersion = VersionConfig.getFallbackVersion();
-      const reason = error?.message || String(error);
+      const reason = this._describeError(error);
       console.warn(
         `Failed to fetch logic files for ${owner}/${tag} (version "${version}"): ${reason}. ` +
         `Falling back to bundled ${fallbackVersion} logic files. ` +
@@ -61,21 +64,31 @@ class LogicLoader {
     };
   }
 
-  static async _fetchLogicFiles(owner, tag) {
+  /**
+   * Turn a download failure into a sentence for the warning banner.
+   * @param {unknown} error - Whatever the download rejected with.
+   * @returns {string} A short description of what went wrong.
+   */
+  static _describeError(error) {
+    if (error?.name === "AbortError") { return "The download did not finish in time"; }
+    return error?.message || String(error);
+  }
+
+  static async _fetchLogicFiles(owner, tag, signal) {
     // Load all logic files in parallel
     const [logicHelpersFile, locationTable, boulderResult, bossesFile, overworldFile, ...dungeonResults] = await Promise.all([
-      this._loadLogicFile(this._logicHelpersFileUrl(owner, tag)),
-      this._loadLocationTable(this._locationListFileUrl(owner, tag)),
-      this._loadBoulderTable(this._bouldersFileUrl(owner, tag)),
-      this._loadLogicFile(this._logicFileUrl(owner, tag, "Bosses.json")),
-      this._loadLogicFile(this._logicFileUrl(owner, tag, "Overworld.json")),
+      this._loadLogicFile(this._logicHelpersFileUrl(owner, tag), signal),
+      this._loadLocationTable(this._locationListFileUrl(owner, tag), signal),
+      this._loadBoulderTable(this._bouldersFileUrl(owner, tag), signal),
+      this._loadLogicFile(this._logicFileUrl(owner, tag, "Bosses.json"), signal),
+      this._loadLogicFile(this._logicFileUrl(owner, tag, "Overworld.json"), signal),
       ...DUNGEONS.flatMap(dungeonName => [
-        this._loadLogicFile(this._logicFileUrl(owner, tag, `${dungeonName}.json`)).then(data => ({
+        this._loadLogicFile(this._logicFileUrl(owner, tag, `${dungeonName}.json`), signal).then(data => ({
           type: "normal",
           name: dungeonName,
           data,
         })),
-        this._loadLogicFile(this._logicFileUrl(owner, tag, `${dungeonName} MQ.json`)).then(data => ({
+        this._loadLogicFile(this._logicFileUrl(owner, tag, `${dungeonName} MQ.json`), signal).then(data => ({
           type: "mq",
           name: `${dungeonName} MQ`,
           data,
@@ -107,31 +120,34 @@ class LogicLoader {
     return { files, warnings };
   }
 
-  static async _loadLogicFile(fileUrl) {
-    const fileData = await this._loadFileFromUrl(fileUrl);
+  static async _loadLogicFile(fileUrl, signal) {
+    const fileData = await this._loadFileFromUrl(fileUrl, signal);
     return JSON.parse(this._validateLogicFile(fileData));
   }
 
   /**
    * Fetch and parse the location table that belongs to this branch's logic files.
    * @param {string} fileUrl - URL of the branch's LocationList.py.
+   * @param {AbortSignal} [signal] - Cancels the download.
    * @returns {Promise<object>} Map of location name to [type, vanilla item].
    */
-  static async _loadLocationTable(fileUrl) {
-    return parseLocationTable(await this._loadFileFromUrl(fileUrl));
+  static async _loadLocationTable(fileUrl, signal) {
+    return parseLocationTable(await this._loadFileFromUrl(fileUrl, signal));
   }
 
   /**
    * Fetch and parse the boulder table, if this branch implements boulder shuffle.
    * @param {string} fileUrl - URL of the branch's Boulders.py.
+   * @param {AbortSignal} [signal] - Cancels the download.
    * @returns {Promise<{boulderTable: object, warning: string|null}>} Map of boulder name to type, plus a warning when
    *   the table could not be fetched for a reason other than "this branch has none".
    */
-  static async _loadBoulderTable(fileUrl) {
+  static async _loadBoulderTable(fileUrl, signal) {
     let response;
     try {
-      response = await fetch(fileUrl);
+      response = await fetch(fileUrl, { signal });
     } catch (error) {
+      if (error?.name === "AbortError") { throw error; }
       return { boulderTable: {}, warning: `Boulder table could not be fetched (${error?.message || error})` };
     }
 
@@ -142,8 +158,8 @@ class LogicLoader {
     return { boulderTable: parseBoulderTable(await response.text()), warning: null };
   }
 
-  static async _loadFileFromUrl(url) {
-    const response = await fetch(url);
+  static async _loadFileFromUrl(url, signal) {
+    const response = await fetch(url, { signal });
     if (!response.ok) { throw new Error(`HTTP ${response.status} fetching ${url}`); }
     return await response.text();
   }
