@@ -2,6 +2,7 @@ import DUNGEONS from "../data/dungeons.json";
 import VersionConfig from "../versions/version-config";
 
 import { parseBoulderTable } from "./boulder-table-parser.mjs";
+import { isEFK } from "./efk";
 import { parseLocationTable } from "./location-table-parser.mjs";
 
 class LogicLoader {
@@ -21,9 +22,10 @@ class LogicLoader {
     // Check for bundled logic files
     if (VersionConfig.isBundled(normalizedVersion, settingsString)) {
       const files = await VersionConfig.getBundledLogicFiles(normalizedVersion, settingsString);
+      const resolvedVersion = isEFK(settingsString) ? "EFK" : normalizedVersion;
       return {
         files,
-        meta: this._meta(normalizedVersion, normalizedVersion, "bundled"),
+        meta: this._meta(normalizedVersion, resolvedVersion, "bundled"),
       };
     }
 
@@ -45,7 +47,18 @@ class LogicLoader {
         `Falling back to bundled ${fallbackVersion} logic files. ` +
         `Tooltips and logic may be inaccurate.`,
       );
-      const files = await VersionConfig.getFallbackLogicFiles();
+
+      let files;
+      try {
+        files = await VersionConfig.getFallbackLogicFiles();
+      } catch (fallbackError) {
+        // Offline with the fallback chunk not yet cached, most likely.
+        // Keep the original reason in the message.
+        throw new Error(
+          `${reason}. The built-in ${fallbackVersion} logic could not be loaded either (${this._describeError(fallbackError)}).`,
+        );
+      }
+
       return {
         files,
         meta: this._meta(normalizedVersion, fallbackVersion, "fallback", { reason }),
@@ -122,7 +135,11 @@ class LogicLoader {
 
   static async _loadLogicFile(fileUrl, signal) {
     const fileData = await this._loadFileFromUrl(fileUrl, signal);
-    return JSON.parse(this._validateLogicFile(fileData));
+    try {
+      return JSON.parse(this._validateLogicFile(fileData));
+    } catch (error) {
+      throw new Error(`${this._fileName(fileUrl)} could not be read as a logic file (${error.message})`);
+    }
   }
 
   /**
@@ -144,24 +161,40 @@ class LogicLoader {
    */
   static async _loadBoulderTable(fileUrl, signal) {
     let response;
+    let text;
     try {
       response = await fetch(fileUrl, { signal });
+      if (response.status === 404) { return { boulderTable: {}, warning: null }; }
+      if (!response.ok) {
+        return { boulderTable: {}, warning: `Boulder table could not be fetched (HTTP ${response.status})` };
+      }
+      text = await response.text();
     } catch (error) {
       if (error?.name === "AbortError") { throw error; }
       return { boulderTable: {}, warning: `Boulder table could not be fetched (${error?.message || error})` };
     }
 
-    if (response.status === 404) { return { boulderTable: {}, warning: null }; }
-    if (!response.ok) {
-      return { boulderTable: {}, warning: `Boulder table could not be fetched (HTTP ${response.status})` };
-    }
-    return { boulderTable: parseBoulderTable(await response.text()), warning: null };
+    return { boulderTable: parseBoulderTable(text), warning: null };
   }
 
   static async _loadFileFromUrl(url, signal) {
     const response = await fetch(url, { signal });
-    if (!response.ok) { throw new Error(`HTTP ${response.status} fetching ${url}`); }
+    if (!response.ok) { throw new Error(`HTTP ${response.status} fetching ${this._fileName(url)}`); }
     return await response.text();
+  }
+
+  /**
+   * The file name at the end of a download URL, for messages people will read.
+   * @param {string} url - A raw.githubusercontent.com file URL.
+   * @returns {string} The decoded final path segment (e.g. "Spirit Temple MQ.json").
+   */
+  static _fileName(url) {
+    const lastSegment = url.slice(url.lastIndexOf("/") + 1);
+    try {
+      return decodeURIComponent(lastSegment);
+    } catch {
+      return lastSegment;
+    }
   }
 
   /**
@@ -170,8 +203,8 @@ class LogicLoader {
    * @returns {string} JSON text ready to be parsed.
    */
   static _validateLogicFile(fileData) {
-    const matchFullLineComment = /^[ \t]*#.*$\n?/gm;
-    const matchTrailingComment = / +#.*$/gm;
+    const matchFullLineComment = /^[ \t]*#[^\n]*\n?/gm;
+    const matchTrailingComment = / +#[^\n]*/g;
     const matchMultilineString = / *\n +/g;
 
     const normalizedNewlines = fileData.replace(/\r\n?/g, "\n");

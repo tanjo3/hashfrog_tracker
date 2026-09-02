@@ -263,7 +263,7 @@ class Locations {
         _.forEach(region.events, (rule, eventName) => {
           const eventData = {
             parentRegion,
-            rule: parseRule(rule),
+            rule: this._parseRuleOf(`event "${eventName}"`, parentRegion, rule),
           };
           if (hintRegion in this.events[locationKey]) {
             _.set(
@@ -280,10 +280,33 @@ class Locations {
       // Record exits as they are relevant to logic
       if (_.includes(_.keys(region), "exits")) {
         _.forEach(region.exits, (rule, exitName) => {
-          _.set(this.exits, [locationKey, hintRegion, parentRegion, exitName], parseRule(rule));
+          _.set(
+            this.exits,
+            [locationKey, hintRegion, parentRegion, exitName],
+            this._parseRuleOf(`exit "${exitName}"`, parentRegion, rule),
+          );
         });
       }
     });
+  }
+
+  /**
+   * Parse an event or exit rule, labelling a syntax error with where it came from.
+   *
+   * Unlike locations, a broken event or exit rule still stops the load.
+   * The region graph would be missing an edge that everything downstream relies on.
+   * @param {string} what - Description of the rule, e.g. `exit "Kokiri Forest -> Lost Woods"`.
+   * @param {string} regionName - The region that declares the rule.
+   * @param {string} rule - The rule text from the logic file.
+   * @returns {object} The parsed rule.
+   * @throws {Error} When the rule does not parse, naming the region and rule.
+   */
+  static _parseRuleOf(what, regionName, rule) {
+    try {
+      return parseRule(rule);
+    } catch (error) {
+      throw new Error(`[${regionName}] ${what} has a rule that could not be parsed: ${error?.message || error} (rule: ${rule})`);
+    }
   }
 
   /**
