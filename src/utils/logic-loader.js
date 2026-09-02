@@ -87,6 +87,17 @@ class LogicLoader {
     return error?.message || String(error);
   }
 
+  /**
+   * Report a boulder-table failure so the player knows its effect on the tracker.
+   *
+   * Without a table, no boulder rule can pass any type, making boulder-blocked exits appear unavailable.
+   * @param {string} detail - What went wrong with the download.
+   * @returns {string} The warning shown in the banner.
+   */
+  static _boulderWarning(detail) {
+    return `The boulder table could not be downloaded (${detail}), so boulder-blocked exits show as unavailable. Reload to try again.`;
+  }
+
   static async _fetchLogicFiles(owner, tag, signal) {
     // Load all logic files in parallel
     const [logicHelpersFile, locationTable, boulderResult, bossesFile, overworldFile, ...dungeonResults] = await Promise.all([
@@ -166,12 +177,12 @@ class LogicLoader {
       response = await fetch(fileUrl, { signal });
       if (response.status === 404) { return { boulderTable: {}, warning: null }; }
       if (!response.ok) {
-        return { boulderTable: {}, warning: `Boulder table could not be fetched (HTTP ${response.status})` };
+        return { boulderTable: {}, warning: this._boulderWarning(`HTTP ${response.status}`) };
       }
       text = await response.text();
     } catch (error) {
       if (error?.name === "AbortError") { throw error; }
-      return { boulderTable: {}, warning: `Boulder table could not be fetched (${error?.message || error})` };
+      return { boulderTable: {}, warning: this._boulderWarning(error?.message || String(error)) };
     }
 
     return { boulderTable: parseBoulderTable(text), warning: null };
