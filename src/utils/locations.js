@@ -34,6 +34,8 @@ class Locations {
    */
   static initialize(dungeonFiles, dungeonMQFiles, bossesFile, overworldFile, locationTable) {
     this.locationTable = locationTable ?? {};
+    this.parseFailures = [];
+
     this.locations = {
       dungeon: new Map(),
       dungeon_mq: new Map(),
@@ -255,6 +257,7 @@ class Locations {
         // These locations exist but their logic is unusable.
         if (parseFailures.length) {
           console.warn(`[${region.region_name}]: ${parseFailures.length} location rules failed to parse.\n${parseFailures.join("\n")}`);
+          this.parseFailures.push(...parseFailures.map(failure => `[${region.region_name}] ${failure}`));
         }
       }
 

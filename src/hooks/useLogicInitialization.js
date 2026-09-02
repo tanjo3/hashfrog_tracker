@@ -146,12 +146,21 @@ const useLogicInitialization = (options = {}) => {
       if (isStale()) { return; }
       const { logicHelpersFile, locationTable, boulderTable, dungeonFiles, dungeonMQFiles, bossesFile, overworldFile } =
         bundle;
-      setLogicMeta(meta);
-
       // Initialize SettingsHelper with version-specific defaults
       SettingsHelper.initialize(bundle);
 
       Locations.initialize(dungeonFiles, dungeonMQFiles, bossesFile, overworldFile, locationTable);
+
+      // Locations with unparseable rules are left out of the tracker
+      const hiddenChecks = Locations.parseFailures.length;
+      const warnings = hiddenChecks
+        ? [
+          ...meta.warnings,
+          `${hiddenChecks} check${hiddenChecks === 1 ? "" : "s"} could not be understood and will not be shown. ` +
+          "See the browser console for details.",
+        ]
+        : meta.warnings;
+      setLogicMeta({ ...meta, warnings });
 
       if (!settingsString) {
         throw new Error(
