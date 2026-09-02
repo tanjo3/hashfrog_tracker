@@ -18,27 +18,25 @@ const LogicSourceWarning = ({ meta }) => {
   const hasWarnings = meta.warnings?.length > 0;
   if (!meta.usedFallback && !hasWarnings) { return null; }
 
+  const headline = meta.usedFallback
+    ? `Logic for version ${meta.requestedVersion} could not be loaded. Using the built-in ${meta.resolvedVersion} logic instead.`
+    : "Some of the logic could not be loaded.";
+
   return (
     <Alert
       variant="warning"
       dismissible
       onClose={() => setDismissed(true)}
-      className="mx-3 mt-3 mb-0 py-2 small"
+      className="logic-source-warning py-2 small mb-0"
     >
-      {meta.usedFallback && (
-        <p className="mb-1">
-          <strong>Logic files for version {meta.requestedVersion} could not be loaded.</strong> Using the built-in{" "}
-          {meta.resolvedVersion} logic instead. The checks shown as available may be incorrect for your seed.
-          {meta.reason && <span className="d-block text-secondary">Reason: {meta.reason}</span>}
-        </p>
-      )}
-      {hasWarnings && (
-        <ul className="mb-0 ps-3">
-          {meta.warnings.map(warning => (
-            <li key={warning}>{warning}</li>
-          ))}
+      <strong>{headline}</strong> The checks shown as available may be incorrect for your seed.{" "}
+      <details className="d-inline-block">
+        <summary className="d-inline text-decoration-underline" style={{ cursor: "pointer" }}>Details</summary>
+        <ul className="mb-0 mt-1 ps-3">
+          {meta.usedFallback && meta.reason && <li>{meta.reason}</li>}
+          {hasWarnings && meta.warnings.map(warning => <li key={warning}>{warning}</li>)}
         </ul>
-      )}
+      </details>
     </Alert>
   );
 };
