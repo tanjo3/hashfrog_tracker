@@ -331,3 +331,9 @@ body {
   z-index: 1050;
   border-radius: 0;
 }
+
+.logic-source-warning .btn-close {
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 0.5rem 1rem;
+}
