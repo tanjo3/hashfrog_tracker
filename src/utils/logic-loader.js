@@ -97,7 +97,7 @@ class LogicLoader {
    * @returns {string} The warning shown in the banner.
    */
   static _boulderWarning(detail) {
-    return `The boulder table could not be downloaded (${detail}), so boulder-blocked exits show as unavailable. Reload to try again.`;
+    return `The boulder table could not be downloaded (${detail}), so anything behind a boulder shows as unavailable. Reload to try again.`;
   }
 
   static async _fetchLogicFiles(owner, tag, signal) {
