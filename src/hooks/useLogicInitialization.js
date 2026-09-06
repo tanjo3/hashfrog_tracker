@@ -139,6 +139,12 @@ const useLogicInitialization = (options = {}) => {
       const generatorVersion = getGeneratorVersionCache();
       const settingsString = getSettingsStringCache();
 
+      if (!settingsString) {
+        throw new Error(
+          "No settings string was provided. Launch the tracker from the main page with a settings string or preset.",
+        );
+      }
+
       // Load logic files for the specific generator version
       const { files: bundle, meta } = await withDeadline(LOGIC_FILES_TIMEOUT_MS, signal =>
         LogicLoader.loadLogicFiles(generatorVersion, settingsString, { signal }),
@@ -161,12 +167,6 @@ const useLogicInitialization = (options = {}) => {
         ]
         : meta.warnings;
       setLogicMeta({ ...meta, warnings });
-
-      if (!settingsString) {
-        throw new Error(
-          "No settings string was provided. Launch the tracker from the main page with a settings string or preset.",
-        );
-      }
 
       const settings = await withDeadline(SETTINGS_DECODE_TIMEOUT_MS, signal =>
         fetchDecodedSettings(generatorVersion, settingsString, signal),
