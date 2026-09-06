@@ -152,7 +152,7 @@ const useLogicInitialization = (options = {}) => {
       Locations.initialize(dungeonFiles, dungeonMQFiles, bossesFile, overworldFile, locationTable);
 
       // Locations with unparseable rules are left out of the tracker
-      const hiddenChecks = Locations.parseFailures.length;
+      const hiddenChecks = Locations.hiddenCheckNames.size;
       const warnings = hiddenChecks
         ? [
           ...meta.warnings,

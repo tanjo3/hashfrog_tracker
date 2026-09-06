@@ -35,6 +35,7 @@ class Locations {
   static initialize(dungeonFiles, dungeonMQFiles, bossesFile, overworldFile, locationTable) {
     this.locationTable = locationTable ?? {};
     this.parseFailures = [];
+    this.hiddenCheckNames = new Set();
 
     this.locations = {
       dungeon: new Map(),
@@ -245,6 +246,9 @@ class Locations {
             }
           } catch (error) {
             parseFailures.push(`"${locationName}": ${error?.message || error} (rule: ${rule})`);
+            if (this.locationTable[locationName]?.[0] !== "Drop") {
+              this.hiddenCheckNames.add(locationName);
+            }
           }
         });
 
