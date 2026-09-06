@@ -39,6 +39,8 @@ class LogicLoader {
         meta: this._meta(normalizedVersion, normalizedVersion, "fetched", { warnings }),
       };
     } catch (error) {
+      if (signal?.aborted && signal.reason === "cancelled") { throw error; }
+
       // If unable to fetch logic files, fall back to the bundled version
       const fallbackVersion = VersionConfig.getFallbackVersion();
       const reason = this._describeError(error);

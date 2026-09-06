@@ -118,11 +118,11 @@ const useLogicInitialization = (options = {}) => {
     const generation = generationRef.current;
     const isStale = () => generationRef.current !== generation;
 
-    abortRef.current?.abort();
+    abortRef.current?.abort("cancelled");
     const withDeadline = async (ms, run) => {
       const controller = new AbortController();
       abortRef.current = controller;
-      const timer = setTimeout(() => controller.abort(), ms);
+      const timer = setTimeout(() => controller.abort("timeout"), ms);
       try {
         return await run(controller.signal);
       } finally {
@@ -202,7 +202,7 @@ const useLogicInitialization = (options = {}) => {
     return () => {
       // Stop an in-flight run from touching state (or the network) after unmount.
       generationRef.current += 1;
-      abortRef.current?.abort();
+      abortRef.current?.abort("cancelled");
     };
   }, [initializeLogic]);
 
