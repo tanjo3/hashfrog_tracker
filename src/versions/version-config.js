@@ -8,8 +8,9 @@ const EFK_BUNDLE = "EFK";
 const DEFAULT_OWNER = "OoTRandomizer";
 const FALLBACK_VERSION = "9.0.0";
 
-// Maps dev-branch version prefixes to the fork repository that hosts the matching logic files.
+// Maps dev-branch version prefixes to the repository branch that hosts the matching logic files.
 const DEV_FORK_BRANCHES = {
+  dev_: { owner: DEFAULT_OWNER, tag: "Dev" },
   devrreal_: { owner: "rrealmuto", tag: "Dev-Rob" },
   devFenhl_: { owner: "fenhl", tag: "dev-fenhl" },
   devR_: { owner: "Roman971", tag: "Dev-R" },
