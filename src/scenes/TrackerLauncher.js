@@ -389,8 +389,9 @@ const TrackerLauncher = () => {
               </div>
 
               <Alert variant="info" className="mt-3 mb-0 py-2 small">
-                {" "}To use a different version, select &ldquo;Other...&rdquo; in the Generator Version field and enter a version
-                (e.g., <code>7.1.0</code> for releases or <code>dev_9.0.1</code> or <code>devrreal_9.0.2-15</code> for dev branches).
+                Your seed page shows the version: a number like <code>9.1.0</code> for releases or a branch name
+                like <code>Dev-Rob v9.0.2-17</code> for dev seeds. Pick the branch from the list or select
+                &ldquo;Other...&rdquo;. A dev branch always loads its newest logic. An older seed may not match it exactly.
               </Alert>
             </div>
           )}
