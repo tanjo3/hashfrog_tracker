@@ -9,14 +9,34 @@ const DEFAULT_OWNER = "OoTRandomizer";
 const FALLBACK_VERSION = "9.0.0";
 
 // Maps dev-branch version prefixes to the repository branch that hosts the matching logic files.
+// `buildTag` turns a reported build into the tag that repository publishes it under.
+// Each project names its tags differently, and a fork with no usable scheme simply has none.
 const DEV_FORK_BRANCHES = {
-  dev_: { owner: DEFAULT_OWNER, tag: "Dev" },
-  devrreal_: { owner: "rrealmuto", tag: "Dev-Rob" },
-  devFenhl_: { owner: "fenhl", tag: "dev-fenhl" },
+  // Upstream publishes each dev build as a bare version tag ("9.1.28"), but prunes older ones
+  dev_: { owner: DEFAULT_OWNER, tag: "Dev", buildTag: (base, build) => (build ? null : base) },
+
+  // Reports "9.0.2-17", publishes "9.0.2.Rob-17"
+  devrreal_: { owner: "rrealmuto", tag: "Dev-Rob", buildTag: (base, build) => (build ? `${base}.Rob-${build}` : null) },
+
+  // Reports "9.1.10-6", publishes "9.1.10-fenhl.6"
+  devFenhl_: { owner: "fenhl", tag: "dev-fenhl", buildTag: (base, build) => (build ? `${base}-fenhl.${build}` : null) },
+
+  // Dev-R publishes no tags for the builds it currently reports
   devR_: { owner: "Roman971", tag: "Dev-R" },
-  devEnemyShuffle_: { owner: "rrealmuto", tag: "enemy_shuffle" },
+
+  // Shares Dev-Rob's repository; its tags carry an E for the enemy-shuffle line
+  devEnemyShuffle_: {
+    owner: "rrealmuto",
+    tag: "enemy_shuffle",
+    buildTag: (base, build) => (build ? `${base}.Rob-E${build}` : null),
+  },
+
+  // This fork also calls its branch "Dev", and its tag names do not follow from the build it reports
   devTFBlitz_: { owner: "Elagatua", tag: "Dev", displayName: "Dev-TFBlitz" },
 };
+
+// A reported build, as a base version and an optional build number: "9.1.28", "9.0.2-17".
+const REPORTED_BUILD = /^(\d+(?:\.\d+)*)(?:-(.+))?$/;
 
 // The generator's seed pages name a dev build by its branch, but both the settings service and the
 // logic files areaddressed by the prefix that the generator itself reports.
@@ -56,25 +76,46 @@ async function getBundledLogicFiles(version, settingsString) {
 }
 
 /**
- * Parses a version string into owner and tag, supporting fork syntax.
- * @param {string} version - The version string (e.g. "9.0.0" or "owner/tag").
- * @returns {{owner: string, tag: string}} The parsed owner and tag.
+ * Work out the tag a fork publishes a specific build under.
+ * @param {object} fork - The entry from DEV_FORK_BRANCHES.
+ * @param {string} reportedBuild - The part of the version string after the prefix, e.g. "9.0.2-17".
+ * @returns {string|null} The exact tag, or null when this fork has no derivable one.
+ */
+function exactBuildTag(fork, reportedBuild) {
+  if (!fork.buildTag) { return null; }
+
+  const parts = reportedBuild.match(REPORTED_BUILD);
+  if (!parts) { return null; }
+
+  return fork.buildTag(parts[1], parts[2]) || null;
+}
+
+/**
+ * Parses a version string into the repository and refs its logic files live at.
+ * @param {string} version - The version string (e.g. "9.0.0", "devrreal_9.0.2-17" or "owner/tag").
+ * @returns {{owner: string, tag: string, exactTag: string|null}} The repository owner, the ref to fall back on
+ *   (a branch for dev versions, a release tag otherwise), and the exact build's tag when one can be derived.
  */
 function parseVersion(version) {
   if (!version) {
-    return { owner: DEFAULT_OWNER, tag: FALLBACK_VERSION };
+    return { owner: DEFAULT_OWNER, tag: FALLBACK_VERSION, exactTag: null };
   }
 
-  // Fork syntax: owner/tag
+  // Fork syntax: owner/tag.
+  // The caller named a ref outright, so there is nothing to derive.
   if (version.includes("/")) {
     const [owner, ...tagParts] = version.split("/");
-    return { owner, tag: tagParts.join("/") };
+    return { owner, tag: tagParts.join("/"), exactTag: null };
   }
 
   // Known dev fork versions
   for (const [prefix, fork] of Object.entries(DEV_FORK_BRANCHES)) {
     if (version.startsWith(prefix)) {
-      return { owner: fork.owner, tag: fork.tag };
+      return {
+        owner: fork.owner,
+        tag: fork.tag,
+        exactTag: exactBuildTag(fork, version.slice(prefix.length)),
+      };
     }
   }
 
@@ -82,11 +123,11 @@ function parseVersion(version) {
   // normalizeVersion pads a bare "9.1" out to "9.1.0", and the generator reports that same dotted form, so translate it back.
   const firstReleaseOfLine = version.match(/^(\d+)\.(\d+)\.0$/);
   if (firstReleaseOfLine) {
-    return { owner: DEFAULT_OWNER, tag: `v${firstReleaseOfLine[1]}.${firstReleaseOfLine[2]}` };
+    return { owner: DEFAULT_OWNER, tag: `v${firstReleaseOfLine[1]}.${firstReleaseOfLine[2]}`, exactTag: null };
   }
 
   // Main repo
-  return { owner: DEFAULT_OWNER, tag: version };
+  return { owner: DEFAULT_OWNER, tag: version, exactTag: null };
 }
 
 /**

@@ -30,10 +30,18 @@ class LogicLoader {
     }
 
     // If none are found, try to fetch them from GitHub
-    const { owner, tag } = VersionConfig.parseVersion(normalizedVersion);
+    const { owner, tag, exactTag } = VersionConfig.parseVersion(normalizedVersion);
+    let ref = tag;
 
     try {
-      const { files, warnings } = await this._fetchLogicFiles(owner, tag, signal);
+      const resolved = await this._resolveRef(owner, tag, exactTag, signal);
+      ref = resolved.ref;
+
+      const { files, warnings } = await this._fetchLogicFiles(owner, ref, signal);
+      if (resolved.missingBuild) {
+        warnings.push(this._missingBuildWarning(resolved.missingBuild, tag));
+      }
+
       return {
         files,
         meta: this._meta(normalizedVersion, normalizedVersion, "fetched", { warnings }),
@@ -45,7 +53,7 @@ class LogicLoader {
       const fallbackVersion = VersionConfig.getFallbackVersion();
       const reason = this._describeError(error);
       console.warn(
-        `Failed to fetch logic files for ${owner}/${tag} (version "${version}"): ${reason}. ` +
+        `Failed to fetch logic files for ${owner}/${ref} (version "${version}"): ${reason}. ` +
         `Falling back to bundled ${fallbackVersion} logic files. ` +
         `Tooltips and logic may be inaccurate.`,
       );
@@ -66,6 +74,47 @@ class LogicLoader {
         meta: this._meta(normalizedVersion, fallbackVersion, "fallback", { reason }),
       };
     }
+  }
+
+  /**
+   * Choose which ref to load: the exact build when its repository still publishes it, otherwise the branch.
+   *
+   * Branch heads move, so a seed made months ago would otherwise be tracked against logic it never used.
+   * Not every project publishes a usable per-build tag, and the ones that do prune old ones, hence the fallback.
+   * @param {string} owner - The repository owner.
+   * @param {string} branchTag - The branch to fall back on.
+   * @param {string|null} exactTag - The exact build's tag, when one could be derived.
+   * @param {AbortSignal} [signal] - Cancels the check.
+   * @returns {Promise<{ref: string, missingBuild: string|null}>} The ref to load, and the build that was asked for but
+   *    is no longer published, when that is why the branch is being used.
+   */
+  static async _resolveRef(owner, branchTag, exactTag, signal) {
+    if (!exactTag || exactTag === branchTag) { return { ref: branchTag, missingBuild: null }; }
+
+    try {
+      // One HEAD request settles it, which is nothing next to the 29 downloads that follow
+      const response = await fetch(this._logicHelpersFileUrl(owner, exactTag), { method: "HEAD", signal });
+      if (response.ok) { return { ref: exactTag, missingBuild: null }; }
+
+      // A real answer of "not there", so the branch is genuinely the best available and worth explaining
+      return { ref: branchTag, missingBuild: exactTag };
+    } catch (error) {
+      if (error?.name === "AbortError") { throw error; }
+
+      // The check itself failed, so we cannot claim the build is gone. Any real network problem resurfaces
+      // on the downloads that follow, which report it properly.
+      return { ref: branchTag, missingBuild: null };
+    }
+  }
+
+  /**
+   * Explain that the seed's own build is gone and a moving branch was used instead.
+   * @param {string} missingBuild - The tag that was expected but is not published.
+   * @param {string} branchTag - The branch used instead.
+   * @returns {string} The warning shown in the banner.
+   */
+  static _missingBuildWarning(missingBuild, branchTag) {
+    return `Build ${missingBuild} is no longer published, so the ${branchTag} branch's current logic was used instead. Which checks show as available may differ from your seed.`;
   }
 
   static _meta(requestedVersion, resolvedVersion, source, { reason = null, warnings = [] } = {}) {

@@ -20,7 +20,7 @@ const LogicSourceWarning = ({ meta }) => {
 
   const headline = meta.usedFallback
     ? `Logic for version ${meta.requestedVersion} could not be loaded. Using the built-in ${meta.resolvedVersion} logic instead.`
-    : "Some of the logic could not be loaded.";
+    : "The logic in use may not match your seed.";
 
   return (
     <Alert
