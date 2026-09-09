@@ -58,6 +58,13 @@ describe("VersionConfig.normalizeVersion", () => {
     expect(VersionConfig.normalizeVersion("")).toBe(VersionConfig.FALLBACK_VERSION);
   });
 
+  it("keeps upstream Dev distinct from a fork whose branch is also called Dev", () => {
+    expect(VersionConfig.normalizeVersion("Dev v9.1.29")).toBe("dev_9.1.29");
+    expect(VersionConfig.normalizeVersion("Dev-TFBlitz v9.1.9-115")).toBe("devTFBlitz_9.1.9-115");
+    expect(VersionConfig.parseVersion("dev_9.1.29")).toEqual({ owner: "OoTRandomizer", tag: "Dev" });
+    expect(VersionConfig.parseVersion("devTFBlitz_9.1.9-115")).toEqual({ owner: "Elagatua", tag: "Dev" });
+  });
+
   it("leaves an unrecognized name alone rather than guessing a branch", () => {
     expect(VersionConfig.normalizeVersion("release")).toBe("release");
     expect(VersionConfig.normalizeVersion("someone/my-branch")).toBe("someone/my-branch");

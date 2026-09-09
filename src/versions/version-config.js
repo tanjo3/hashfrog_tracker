@@ -15,14 +15,15 @@ const DEV_FORK_BRANCHES = {
   devFenhl_: { owner: "fenhl", tag: "dev-fenhl" },
   devR_: { owner: "Roman971", tag: "Dev-R" },
   devEnemyShuffle_: { owner: "rrealmuto", tag: "enemy_shuffle" },
+  devTFBlitz_: { owner: "Elagatua", tag: "Dev", displayName: "Dev-TFBlitz" },
 };
 
 // The generator's seed pages name a dev build by its branch, but both the settings service and the
 // logic files areaddressed by the prefix that the generator itself reports.
 // That prefix appears nowhere on the page, so accept the displayed name too.
-// Keyed by branch name so it cannot drift from the branch list above.
+// Keyed off the branch list above so it cannot drift, using each fork's own display name where its branch name alone would be ambiguous.
 const BRANCH_DISPLAY_NAMES = Object.fromEntries(
-  Object.entries(DEV_FORK_BRANCHES).map(([prefix, fork]) => [fork.tag.toLowerCase(), prefix]),
+  Object.entries(DEV_FORK_BRANCHES).map(([prefix, fork]) => [(fork.displayName ?? fork.tag).toLowerCase(), prefix]),
 );
 
 // A branch name on its own, or followed by the build it produced: "Dev-Rob", "Dev-Rob v9.0.2-17", "Dev 9.1.29".
