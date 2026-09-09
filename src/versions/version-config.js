@@ -17,6 +17,17 @@ const DEV_FORK_BRANCHES = {
   devEnemyShuffle_: { owner: "rrealmuto", tag: "enemy_shuffle" },
 };
 
+// The generator's seed pages name a dev build by its branch, but both the settings service and the
+// logic files areaddressed by the prefix that the generator itself reports.
+// That prefix appears nowhere on the page, so accept the displayed name too.
+// Keyed by branch name so it cannot drift from the branch list above.
+const BRANCH_DISPLAY_NAMES = Object.fromEntries(
+  Object.entries(DEV_FORK_BRANCHES).map(([prefix, fork]) => [fork.tag.toLowerCase(), prefix]),
+);
+
+// A branch name on its own, or followed by the build it produced: "Dev-Rob", "Dev-Rob v9.0.2-17", "Dev 9.1.29".
+const DISPLAYED_BRANCH = /^([A-Za-z][A-Za-z0-9_-]*)(?:\s+v?(\S+))?$/;
+
 /**
  * Checks if a version has bundled logic files.
  * @param {string} version - The version string to check.
@@ -94,8 +105,12 @@ async function getFallbackLogicFiles() {
 }
 
 /**
- * Normalizes a version string (strips "v" prefix, adds .0 patch if needed).
- * @param {string} version - The raw version string.
+ * Normalizes a version string into the form the generator itself reports.
+ *
+ * Folds a branch name as a seed page displays it into its version prefix, strips a leading "v", and
+ * pads a bare major.minor out to a patch version.
+ * Already-normalized versions pass through unchanged.
+ * @param {string} version - The raw version string, as typed or as saved.
  * @returns {string} The normalized version.
  */
 function normalizeVersion(version) {
@@ -103,13 +118,22 @@ function normalizeVersion(version) {
     return FALLBACK_VERSION;
   }
 
+  const trimmed = version.trim();
+
+  // A branch name as the seed page shows it
+  const displayedBranch = trimmed.match(DISPLAYED_BRANCH);
+  const branchPrefix = displayedBranch && BRANCH_DISPLAY_NAMES[displayedBranch[1].toLowerCase()];
+  if (branchPrefix) {
+    return `${branchPrefix}${displayedBranch[2] ?? ""}`;
+  }
+
   // Dev versions pass through unchanged
-  if (version.startsWith("dev")) {
-    return version;
+  if (trimmed.startsWith("dev")) {
+    return trimmed;
   }
 
   // Remove leading "v" if present
-  let normalized = version.startsWith("v") ? version.slice(1) : version;
+  let normalized = trimmed.startsWith("v") ? trimmed.slice(1) : trimmed;
 
   // Add .0 patch version if only major.minor provided
   const parts = normalized.split(".");
