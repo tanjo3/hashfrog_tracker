@@ -22,6 +22,9 @@ const PRESETS = SettingStringsJSON.presets || [];
 const CURRENT_ACTIVE_VERSION = SettingStringsJSON.currentActiveVersion || "9.0.0";
 const GENERATOR_VERSIONS = SettingStringsJSON.supportedVersions || ["9.0.0"];
 
+const DEV_BRANCHES = SettingStringsJSON.supportedDevBranches || [];
+const SELECTABLE_VERSIONS = [...GENERATOR_VERSIONS, ...DEV_BRANCHES.map((branch) => branch.value)];
+
 /**
  * Parses and validates the layout a session snapshot stores as a JSON string.
  * @param {object|null} session - The saved session snapshot.
@@ -86,7 +89,7 @@ const TrackerLauncher = () => {
   const [isCustomVersion, setIsCustomVersion] = useState(
     () => {
       const version = cachedGeneratorVersion || CURRENT_ACTIVE_VERSION;
-      return version && !GENERATOR_VERSIONS.includes(version);
+      return version && !SELECTABLE_VERSIONS.includes(version);
     }
   );
   const debouncedVersion = useDebounce(generatorVersion, 300);
@@ -94,7 +97,7 @@ const TrackerLauncher = () => {
   // Auto-detect if version is custom when it changes
   useEffect(() => {
     if (generatorVersion) {
-      setIsCustomVersion(!GENERATOR_VERSIONS.includes(generatorVersion));
+      setIsCustomVersion(!SELECTABLE_VERSIONS.includes(generatorVersion));
     }
   }, [generatorVersion]);
 
@@ -319,11 +322,22 @@ const TrackerLauncher = () => {
                       }}
                     >
                       <option value="">Select version</option>
-                      {GENERATOR_VERSIONS.map((version) => (
-                        <option key={version} value={version}>
-                          {version}
-                        </option>
-                      ))}
+                      <optgroup label="Releases">
+                        {GENERATOR_VERSIONS.map((version) => (
+                          <option key={version} value={version}>
+                            {version}
+                          </option>
+                        ))}
+                      </optgroup>
+                      {DEV_BRANCHES.length > 0 && (
+                        <optgroup label="Dev branches (newest logic)">
+                          {DEV_BRANCHES.map((branch) => (
+                            <option key={branch.value} value={branch.value}>
+                              {branch.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
                       <option value="__other__">Other...</option>
                     </Form.Select>
                   )}

@@ -4,6 +4,20 @@
     "9.1.0",
     "8.3.0"
   ],
+  "supportedDevBranches": [
+    {
+      "label": "Dev",
+      "value": "dev_"
+    },
+    {
+      "label": "Dev-Rob",
+      "value": "devrreal_"
+    },
+    {
+      "label": "Dev-Fenhl",
+      "value": "devFenhl_"
+    }
+  ],
   "presets": [
     {
       "label": "Mentor 2026",
