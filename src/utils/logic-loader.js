@@ -2,48 +2,168 @@ import DUNGEONS from "../data/dungeons.json";
 import VersionConfig from "../versions/version-config";
 
 import { parseBoulderTable } from "./boulder-table-parser.mjs";
+import { isEFK } from "./efk";
 import { parseLocationTable } from "./location-table-parser.mjs";
 
 class LogicLoader {
-  static async loadLogicFiles(version, settingsString) {
+  /**
+   * Load the logic files for a generator version, preferring a bundled copy and otherwise fetching from GitHub.
+   * @param {string} version - Generator version as reported by the randomizer (e.g. "9.1.0" or "owner/tag").
+   * @param {string} [settingsString] - Settings string, used to detect the EFK bundle.
+   * @param {object} [options] - Loading options.
+   * @param {AbortSignal} [options.signal] - Cancels the GitHub downloads (a timeout or an unmount).
+   *   The loader then falls back to the bundled version like any other download failure.
+   * @returns {Promise<{files: object, meta: {requestedVersion: string, resolvedVersion: string, source: string, usedFallback: boolean, reason: string|null, warnings: string[]}}>}
+   *   The logic bundle plus a description of where it came from. `source` is "bundled", "fetched" or "fallback".
+   */
+  static async loadLogicFiles(version, settingsString, { signal } = {}) {
     const normalizedVersion = VersionConfig.normalizeVersion(version);
 
     // Check for bundled logic files
     if (VersionConfig.isBundled(normalizedVersion, settingsString)) {
-      return await VersionConfig.getBundledLogicFiles(normalizedVersion, settingsString);
+      const files = await VersionConfig.getBundledLogicFiles(normalizedVersion, settingsString);
+      const resolvedVersion = isEFK(settingsString) ? "EFK" : normalizedVersion;
+      return {
+        files,
+        meta: this._meta(normalizedVersion, resolvedVersion, "bundled"),
+      };
     }
 
     // If none are found, try to fetch them from GitHub
-    const { owner, tag } = VersionConfig.parseVersion(normalizedVersion);
+    const { owner, tag, exactTag } = VersionConfig.parseVersion(normalizedVersion);
+    let ref = tag;
 
     try {
-      return await this._fetchLogicFiles(owner, tag);
+      const resolved = await this._resolveRef(owner, tag, exactTag, signal);
+      ref = resolved.ref;
+
+      const { files, warnings } = await this._fetchLogicFiles(owner, ref, signal);
+      if (resolved.missingBuild) {
+        warnings.push(this._missingBuildWarning(resolved.missingBuild, tag));
+      }
+
+      return {
+        files,
+        meta: this._meta(normalizedVersion, normalizedVersion, "fetched", { warnings }),
+      };
     } catch (error) {
-      // If unable to fetch logic files, fall back to bundled version
+      if (signal?.aborted && signal.reason === "cancelled") { throw error; }
+
+      // If unable to fetch logic files, fall back to the bundled version
+      const fallbackVersion = VersionConfig.getFallbackVersion();
+      const reason = this._describeError(error);
       console.warn(
-        `Failed to fetch logic files for ${owner}/${tag} (version "${version}"): ${error}. ` +
-        `Falling back to bundled ${VersionConfig.getFallbackVersion()} logic files. ` +
+        `Failed to fetch logic files for ${owner}/${ref} (version "${version}"): ${reason}. ` +
+        `Falling back to bundled ${fallbackVersion} logic files. ` +
         `Tooltips and logic may be inaccurate.`,
       );
-      return await VersionConfig.getFallbackLogicFiles();
+
+      let files;
+      try {
+        files = await VersionConfig.getFallbackLogicFiles();
+      } catch (fallbackError) {
+        // Offline with the fallback chunk not yet cached, most likely.
+        // Keep the original reason in the message.
+        throw new Error(
+          `${reason}. The built-in ${fallbackVersion} logic could not be loaded either (${this._describeError(fallbackError)}).`,
+        );
+      }
+
+      return {
+        files,
+        meta: this._meta(normalizedVersion, fallbackVersion, "fallback", { reason }),
+      };
     }
   }
 
-  static async _fetchLogicFiles(owner, tag) {
+  /**
+   * Choose which ref to load: the exact build when its repository still publishes it, otherwise the branch.
+   *
+   * Branch heads move, so a seed made months ago would otherwise be tracked against logic it never used.
+   * Not every project publishes a usable per-build tag, and the ones that do prune old ones, hence the fallback.
+   * @param {string} owner - The repository owner.
+   * @param {string} branchTag - The branch to fall back on.
+   * @param {string|null} exactTag - The exact build's tag, when one could be derived.
+   * @param {AbortSignal} [signal] - Cancels the check.
+   * @returns {Promise<{ref: string, missingBuild: string|null}>} The ref to load, and the build that was asked for but
+   *    is no longer published, when that is why the branch is being used.
+   */
+  static async _resolveRef(owner, branchTag, exactTag, signal) {
+    if (!exactTag || exactTag === branchTag) { return { ref: branchTag, missingBuild: null }; }
+
+    try {
+      // One HEAD request settles it, which is nothing next to the 29 downloads that follow
+      const response = await fetch(this._logicHelpersFileUrl(owner, exactTag), { method: "HEAD", signal });
+      if (response.ok) { return { ref: exactTag, missingBuild: null }; }
+
+      // A real answer of "not there", so the branch is genuinely the best available and worth explaining
+      return { ref: branchTag, missingBuild: exactTag };
+    } catch (error) {
+      if (error?.name === "AbortError") { throw error; }
+
+      // The check itself failed, so we cannot claim the build is gone. Any real network problem resurfaces
+      // on the downloads that follow, which report it properly.
+      return { ref: branchTag, missingBuild: null };
+    }
+  }
+
+  /**
+   * Explain that the seed's own build is gone and a moving branch was used instead.
+   * @param {string} missingBuild - The tag that was expected but is not published.
+   * @param {string} branchTag - The branch used instead.
+   * @returns {string} The warning shown in the banner.
+   */
+  static _missingBuildWarning(missingBuild, branchTag) {
+    return `Build ${missingBuild} is no longer published, so the ${branchTag} branch's current logic was used instead. Which checks show as available may differ from your seed.`;
+  }
+
+  static _meta(requestedVersion, resolvedVersion, source, { reason = null, warnings = [] } = {}) {
+    return {
+      requestedVersion,
+      resolvedVersion,
+      source,
+      usedFallback: source === "fallback",
+      reason,
+      warnings,
+    };
+  }
+
+  /**
+   * Turn a download failure into a sentence for the warning banner.
+   * @param {unknown} error - Whatever the download rejected with.
+   * @returns {string} A short description of what went wrong.
+   */
+  static _describeError(error) {
+    if (error?.name === "AbortError") { return "The download did not finish in time"; }
+    return error?.message || String(error);
+  }
+
+  /**
+   * Report a boulder-table failure so the player knows its effect on the tracker.
+   *
+   * Without a table, no boulder rule can pass any type, making boulder-blocked exits appear unavailable.
+   * @param {string} detail - What went wrong with the download.
+   * @returns {string} The warning shown in the banner.
+   */
+  static _boulderWarning(detail) {
+    return `The boulder table could not be downloaded (${detail}), so anything behind a boulder shows as unavailable. Reload to try again.`;
+  }
+
+  static async _fetchLogicFiles(owner, tag, signal) {
     // Load all logic files in parallel
-    const [logicHelpersFile, locationTable, boulderTable, bossesFile, overworldFile, ...dungeonResults] = await Promise.all([
-      this._loadLogicFile(this._logicHelpersFileUrl(owner, tag)),
-      this._loadLocationTable(this._locationListFileUrl(owner, tag)),
-      this._loadBoulderTable(this._bouldersFileUrl(owner, tag)),
-      this._loadLogicFile(this._logicFileUrl(owner, tag, "Bosses.json")),
-      this._loadLogicFile(this._logicFileUrl(owner, tag, "Overworld.json")),
+    const [logicHelpersFile, locationTable, boulderResult, bossesFile, overworldFile, ...dungeonResults] = await Promise.all([
+      this._loadLogicFile(this._logicHelpersFileUrl(owner, tag), signal),
+      this._loadLocationTable(this._locationListFileUrl(owner, tag), signal),
+      this._loadBoulderTable(this._bouldersFileUrl(owner, tag), signal),
+      this._loadLogicFile(this._logicFileUrl(owner, tag, "Bosses.json"), signal),
+      this._loadLogicFile(this._logicFileUrl(owner, tag, "Overworld.json"), signal),
       ...DUNGEONS.flatMap(dungeonName => [
-        this._loadLogicFile(this._logicFileUrl(owner, tag, `${dungeonName}.json`)).then(data => ({
+        this._loadLogicFile(this._logicFileUrl(owner, tag, `${dungeonName}.json`), signal).then(data => ({
           type: "normal",
           name: dungeonName,
           data,
         })),
-        this._loadLogicFile(this._logicFileUrl(owner, tag, `${dungeonName} MQ.json`)).then(data => ({
+        this._loadLogicFile(this._logicFileUrl(owner, tag, `${dungeonName} MQ.json`), signal).then(data => ({
           type: "mq",
           name: `${dungeonName} MQ`,
           data,
@@ -61,48 +181,82 @@ class LogicLoader {
       }
     });
 
-    return {
+    const files = {
       logicHelpersFile,
       locationTable,
-      boulderTable,
+      boulderTable: boulderResult.boulderTable,
       dungeonFiles,
       dungeonMQFiles,
       bossesFile,
       overworldFile,
     };
+    const warnings = boulderResult.warning ? [boulderResult.warning] : [];
+
+    return { files, warnings };
   }
 
-  static async _loadLogicFile(fileUrl) {
-    const fileData = await this._loadFileFromUrl(fileUrl);
-    return JSON.parse(this._validateLogicFile(fileData));
+  static async _loadLogicFile(fileUrl, signal) {
+    const fileData = await this._loadFileFromUrl(fileUrl, signal);
+    try {
+      return JSON.parse(this._validateLogicFile(fileData));
+    } catch (error) {
+      throw new Error(`${this._fileName(fileUrl)} could not be read as a logic file (${error.message})`);
+    }
   }
 
   /**
    * Fetch and parse the location table that belongs to this branch's logic files.
    * @param {string} fileUrl - URL of the branch's LocationList.py.
+   * @param {AbortSignal} [signal] - Cancels the download.
    * @returns {Promise<object>} Map of location name to [type, vanilla item].
    */
-  static async _loadLocationTable(fileUrl) {
-    return parseLocationTable(await this._loadFileFromUrl(fileUrl));
+  static async _loadLocationTable(fileUrl, signal) {
+    return parseLocationTable(await this._loadFileFromUrl(fileUrl, signal));
   }
 
   /**
    * Fetch and parse the boulder table, if this branch implements boulder shuffle.
    * @param {string} fileUrl - URL of the branch's Boulders.py.
-   * @returns {Promise<object>} Map of boulder name to type, empty when the branch has no such file.
+   * @param {AbortSignal} [signal] - Cancels the download.
+   * @returns {Promise<{boulderTable: object, warning: string|null}>} Map of boulder name to type, plus a warning when
+   *   the table could not be fetched for a reason other than "this branch has none".
    */
-  static async _loadBoulderTable(fileUrl) {
-    const response = await fetch(fileUrl);
+  static async _loadBoulderTable(fileUrl, signal) {
+    let response;
+    let text;
+    try {
+      response = await fetch(fileUrl, { signal });
+      if (response.status === 404) { return { boulderTable: {}, warning: null }; }
+      if (!response.ok) {
+        return { boulderTable: {}, warning: this._boulderWarning(`HTTP ${response.status}`) };
+      }
+      text = await response.text();
+    } catch (error) {
+      if (error?.name === "AbortError") { throw error; }
+      return { boulderTable: {}, warning: this._boulderWarning(error?.message || String(error)) };
+    }
 
-    // Only the boulder-shuffle forks ship Boulders.py, so a miss here is the normal case
-    if (!response.ok) { return {}; }
-    return parseBoulderTable(await response.text());
+    return { boulderTable: parseBoulderTable(text), warning: null };
   }
 
-  static async _loadFileFromUrl(url) {
-    const response = await fetch(url);
-    if (!response.ok) { throw new Error(`HTTP ${response.status} fetching ${url}`); }
+  static async _loadFileFromUrl(url, signal) {
+    const response = await fetch(url, { signal });
+    if (!response.ok) { throw new Error(`HTTP ${response.status} fetching ${this._fileName(url)}`); }
     return await response.text();
+  }
+
+  /**
+   * The file name at the end of a download URL, for messages people will read.
+   * @param {string} url - A raw.githubusercontent.com file URL.
+   * @returns {string} The decoded final path segment (e.g. "Spirit Temple MQ.json").
+   */
+  static _fileName(url) {
+    const lastSegment = url.slice(url.lastIndexOf("/") + 1);
+    try {
+      return decodeURIComponent(lastSegment);
+    } catch {
+      return lastSegment;
+    }
   }
 
   /**
@@ -111,11 +265,12 @@ class LogicLoader {
    * @returns {string} JSON text ready to be parsed.
    */
   static _validateLogicFile(fileData) {
-    const matchFullLineComment = new RegExp(/^[ \t]*#[^\n]*\n?/, "gm");
-    const matchTrailingComment = new RegExp(/ +#.*\n/, "g");
-    const matchMultilineString = new RegExp(/ *\n +/, "g");
+    const matchFullLineComment = /^[ \t]*#[^\n]*\n?/gm;
+    const matchTrailingComment = / +#[^\n]*/g;
+    const matchMultilineString = / *\n +/g;
 
-    const removedFullLineComments = fileData.replace(matchFullLineComment, "");
+    const normalizedNewlines = fileData.replace(/\r\n?/g, "\n");
+    const removedFullLineComments = normalizedNewlines.replace(matchFullLineComment, "");
     const removedComments = removedFullLineComments.replace(matchTrailingComment, "").trim();
     const removedMultilines = removedComments.replace(matchMultilineString, " ").trim();
 

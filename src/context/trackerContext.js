@@ -13,6 +13,7 @@ import Locations from "../utils/locations";
 import LogicHelper from "../utils/logic-helper";
 import { readJSON, writeString } from "../utils/safe-storage";
 import SettingsHelper from "../utils/settings-helper";
+import VersionConfig from "../versions/version-config";
 
 const GENERATOR_VERSION = process.env.REACT_APP_GENERATOR_VERSION;
 
@@ -117,8 +118,8 @@ function setSettingsStringCache(string) {
 }
 
 /**
- * Retrieves the cached generator version from localStorage.
- * @returns {string} The cached version, or the default from env.
+ * Retrieves the cached generator version from localStorage, in the form the generator reports.
+ * @returns {string} The normalized cached version, or the default from env.
  */
 function getGeneratorVersionCache() {
   let version = localStorage.getItem("generator_version");
@@ -126,7 +127,7 @@ function getGeneratorVersionCache() {
     // Coming from .env and using it as default
     version = GENERATOR_VERSION;
   }
-  return version;
+  return VersionConfig.normalizeVersion(version);
 }
 
 /**
@@ -442,7 +443,11 @@ function reducer(state, action) {
     }
     case "ITEMS_UPDATE_FROM_LOGIC": {
       const settings = payload;
-      const items = [...settings.starting_equipment, ...settings.starting_inventory, ...settings.starting_songs];
+      const items = [
+        ...(settings.starting_equipment ?? []),
+        ...(settings.starting_inventory ?? []),
+        ...(settings.starting_songs ?? []),
+      ];
 
       const starting_inventory = items.map(item => {
         return ITEMS_JSON[item];

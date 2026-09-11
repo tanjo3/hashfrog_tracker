@@ -322,3 +322,18 @@ body {
   padding: 0 0.25rem;
   margin-bottom: 0.25rem;
 }
+
+.logic-source-warning {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1050;
+  border-radius: 0;
+}
+
+.logic-source-warning .btn-close {
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 0.5rem 1rem;
+}

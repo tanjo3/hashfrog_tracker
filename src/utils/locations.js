@@ -34,6 +34,9 @@ class Locations {
    */
   static initialize(dungeonFiles, dungeonMQFiles, bossesFile, overworldFile, locationTable) {
     this.locationTable = locationTable ?? {};
+    this.parseFailures = [];
+    this.hiddenCheckNames = new Set();
+
     this.locations = {
       dungeon: new Map(),
       dungeon_mq: new Map(),
@@ -174,7 +177,15 @@ class Locations {
 
       if (_.includes(_.keys(region), "locations")) {
         const missingLocations = [];
+        const parseFailures = [];
         _.forEach(region.locations, (rule, locationName) => {
+          // A location the table doesn't know and a rule that doesn't parse are different problems.
+          // The first means the location can't be categorized. The second means its logic is unusable.
+          if (!(locationName in this.locationTable)) {
+            missingLocations.push(locationName);
+            return;
+          }
+
           try {
             const [type, vanillaItem] = this.locationTable[locationName];
 
@@ -234,13 +245,23 @@ class Locations {
               }
             }
           } catch (error) {
-            missingLocations.push(locationName);
+            parseFailures.push(`"${locationName}": ${error?.message || error} (rule: ${rule})`);
+            if (this.locationTable[locationName]?.[0] !== "Drop") {
+              this.hiddenCheckNames.add(locationName);
+            }
           }
         });
 
         // Alert when there are unknown locations
         if (missingLocations.length) {
           console.warn(`[${region.region_name}]: ${missingLocations.length} locations missing from locations table.`);
+        }
+
+        // Alert separately when rules cannot be parsed.
+        // These locations exist but their logic is unusable.
+        if (parseFailures.length) {
+          console.warn(`[${region.region_name}]: ${parseFailures.length} location rules failed to parse.\n${parseFailures.join("\n")}`);
+          this.parseFailures.push(...parseFailures.map(failure => `[${region.region_name}] ${failure}`));
         }
       }
 
@@ -249,7 +270,7 @@ class Locations {
         _.forEach(region.events, (rule, eventName) => {
           const eventData = {
             parentRegion,
-            rule: parseRule(rule),
+            rule: this._parseRuleOf(`event "${eventName}"`, parentRegion, rule),
           };
           if (hintRegion in this.events[locationKey]) {
             _.set(
@@ -266,10 +287,33 @@ class Locations {
       // Record exits as they are relevant to logic
       if (_.includes(_.keys(region), "exits")) {
         _.forEach(region.exits, (rule, exitName) => {
-          _.set(this.exits, [locationKey, hintRegion, parentRegion, exitName], parseRule(rule));
+          _.set(
+            this.exits,
+            [locationKey, hintRegion, parentRegion, exitName],
+            this._parseRuleOf(`exit "${exitName}"`, parentRegion, rule),
+          );
         });
       }
     });
+  }
+
+  /**
+   * Parse an event or exit rule, labelling a syntax error with where it came from.
+   *
+   * Unlike locations, a broken event or exit rule still stops the load.
+   * The region graph would be missing an edge that everything downstream relies on.
+   * @param {string} what - Description of the rule, e.g. `exit "Kokiri Forest -> Lost Woods"`.
+   * @param {string} regionName - The region that declares the rule.
+   * @param {string} rule - The rule text from the logic file.
+   * @returns {object} The parsed rule.
+   * @throws {Error} When the rule does not parse, naming the region and rule.
+   */
+  static _parseRuleOf(what, regionName, rule) {
+    try {
+      return parseRule(rule);
+    } catch (error) {
+      throw new Error(`[${regionName}] ${what} has a rule that could not be parsed: ${error?.message || error} (rule: ${rule})`);
+    }
   }
 
   /**
